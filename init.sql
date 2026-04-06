@@ -1,101 +1,83 @@
--- Create extensions
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+SET NAMES utf8mb4;
+SET CHARACTER SET utf8mb4;
 
--- Create enums
-CREATE TYPE app_role AS ENUM ('admin', 'supervisor', 'coordenador');
+USE event_calendar;
 
-CREATE TYPE event_type AS ENUM (
-  'Evento',
-  'Ação Pontual',
-  'Projeto Institucional',
-  'Projeto Pedagógico',
-  'Expedição Pedagógica',
-  'Formação',
-  'Festa'
-);
+DROP TABLE IF EXISTS events;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS app_settings;
 
-CREATE TYPE event_status AS ENUM ('pending', 'approved', 'rejected');
-
-CREATE TYPE auth_type AS ENUM ('local', 'google');
-
--- Create users table
 CREATE TABLE users (
-  id SERIAL PRIMARY KEY,
-  email VARCHAR(255) UNIQUE NOT NULL,
-  password_hash VARCHAR(255),
-  full_name VARCHAR(255),
-  avatar_url TEXT,
-  auth_type auth_type NOT NULL DEFAULT 'google',
-  google_id VARCHAR(255) UNIQUE,
-  role app_role NOT NULL DEFAULT 'coordenador',
-  active BOOLEAN DEFAULT true,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  email VARCHAR(255) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NULL,
+  full_name VARCHAR(255) NULL,
+  avatar_url TEXT NULL,
+  auth_type ENUM("local", "google") NOT NULL DEFAULT "google",
+  google_id VARCHAR(255) NULL UNIQUE,
+  role ENUM("admin", "supervisor", "coordenador") NOT NULL DEFAULT "coordenador",
+  active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Create events table
 CREATE TABLE events (
-  id SERIAL PRIMARY KEY,
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   title VARCHAR(255) NOT NULL,
-  description TEXT,
+  description TEXT NULL,
+  involved_emails TEXT NULL,
   start_date DATE NOT NULL,
   end_date DATE NOT NULL,
-  start_time TIME,
-  end_time TIME,
-  all_day BOOLEAN DEFAULT false,
-  event_type event_type NOT NULL,
-  status event_status DEFAULT 'pending',
-  created_by INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  approved_by INT REFERENCES users(id) ON DELETE SET NULL,
-  approved_at TIMESTAMP,
-  google_calendar_event_id VARCHAR(255),
-  CONSTRAINT valid_dates CHECK (end_date >= start_date)
-);
+  start_time TIME NULL,
+  end_time TIME NULL,
+  all_day TINYINT(1) NOT NULL DEFAULT 0,
+  event_type ENUM(
+    "Evento",
+    "Ação Pontual",
+    "Projeto Institucional",
+    "Projeto Pedagógico",
+    "Expedição Pedagógica",
+    "Formação",
+    "Festa"
+  ) NOT NULL,
+  status ENUM("pending", "approved", "rejected") NOT NULL DEFAULT "pending",
+  created_by INT UNSIGNED NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  approved_by INT UNSIGNED NULL,
+  approved_at DATETIME NULL,
+  google_calendar_event_id VARCHAR(255) NULL,
+  CONSTRAINT chk_event_dates CHECK (end_date >= start_date),
+  CONSTRAINT fk_events_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_events_approved_by FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Create indexes
-CREATE INDEX idx_users_email ON users(email);
-CREATE INDEX idx_users_google_id ON users(google_id);
-CREATE INDEX idx_events_created_by ON events(created_by);
-CREATE INDEX idx_events_status ON events(status);
-CREATE INDEX idx_events_start_date ON events(start_date);
-CREATE INDEX idx_events_approved_by ON events(approved_by);
+CREATE TABLE app_settings (
+  setting_key VARCHAR(120) PRIMARY KEY,
+  setting_value TEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Create trigger function for updated_at
-CREATE OR REPLACE FUNCTION update_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = CURRENT_TIMESTAMP;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+CREATE INDEX idx_users_email ON users (email);
+CREATE INDEX idx_users_google_id ON users (google_id);
+CREATE INDEX idx_events_created_by ON events (created_by);
+CREATE INDEX idx_events_status ON events (status);
+CREATE INDEX idx_events_start_date ON events (start_date);
+CREATE INDEX idx_events_approved_by ON events (approved_by);
 
--- Create triggers
-CREATE TRIGGER trigger_users_updated_at
-BEFORE UPDATE ON users
-FOR EACH ROW
-EXECUTE FUNCTION update_updated_at();
-
-CREATE TRIGGER trigger_events_updated_at
-BEFORE UPDATE ON events
-FOR EACH ROW
-EXECUTE FUNCTION update_updated_at();
-
--- Insert admin user (password: admin123 - bcrypt hashed)
--- Hash generated with bcrypt: $2b$10$YourHashHereGenerateWithBcrypt
 INSERT INTO users (email, password_hash, full_name, auth_type, role, active)
 VALUES (
-  'admin@app.local',
-  '$2b$10$D9Z5jJzrD8pJ7K9L5M3N2e5Q6R7S8T9U0V1W2X3Y4Z5A6B7C8D9E0', -- Placeholder, será gerado no backend
-  'Admin User',
-  'local',
-  'admin',
-  true
-);
-
--- Grant permissions
-GRANT CONNECT ON DATABASE event_calendar TO app_user;
-GRANT USAGE ON SCHEMA public TO app_user;
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO app_user;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO app_user;
+  "admin@app.local",
+  "$2a$10$S9gZh1O4jfInAuQ6JtGGc.D1urMKoTTEmbvmjJRAqCIqxyhWMDBom",
+  "Administrador do Sistema",
+  "local",
+  "admin",
+  1
+)
+ON DUPLICATE KEY UPDATE
+  password_hash = VALUES(password_hash),
+  full_name = VALUES(full_name),
+  auth_type = "local",
+  role = "admin",
+  active = 1;

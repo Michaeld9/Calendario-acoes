@@ -1,7 +1,8 @@
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Calendar, CalendarClock, CheckSquare, LogOut, Shield, User, Users2 } from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,29 +11,37 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Calendar, CheckSquare, CalendarDays, LogOut, Shield, User } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
 interface DashboardLayoutProps {
   children: ReactNode;
-  activeTab: "events" | "approvals" | "calendar";
+  activeTab: "events" | "approvals" | "mirror" | "admin";
+}
+
+interface StoredUser {
+  email: string;
+  full_name: string | null;
+  role: "admin" | "supervisor" | "coordenador";
 }
 
 const DashboardLayout = ({ children, activeTab }: DashboardLayoutProps) => {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [user, setUser] = useState<any>(null);
+  const isMobile = useIsMobile();
+  const [user, setUser] = useState<StoredUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchUserData = async () => {
+    const loadUserFromStorage = async () => {
       try {
         const userStr = localStorage.getItem("user");
         if (!userStr) {
           navigate("/auth");
           return;
         }
+
         setUser(JSON.parse(userStr));
       } catch {
         navigate("/auth");
@@ -41,74 +50,92 @@ const DashboardLayout = ({ children, activeTab }: DashboardLayoutProps) => {
       }
     };
 
-    fetchUserData();
+    loadUserFromStorage();
   }, [navigate]);
 
-  const handleLogout = async () => {
+  const handleLogout = () => {
     localStorage.removeItem("auth_token");
     localStorage.removeItem("user");
+
     toast({
-      title: "Logout realizado",
-      description: "Você foi desconectado com sucesso.",
+      title: "Sessão encerrada",
+      description: "Você saiu da plataforma com sucesso.",
     });
+
     navigate("/auth");
   };
 
-  const NavButton = ({
-    icon: Icon,
-    label,
-    value,
-    onClick
-  }: {
-    icon: any;
-    label: string;
-    value: "events" | "approvals" | "calendar";
-    onClick: () => void;
-  }) => (
-    <button
-      onClick={onClick}
-      className={cn(
-        "flex items-center gap-3 px-4 py-3 rounded-lg transition-all w-full text-left",
-        activeTab === value
-          ? "bg-primary text-primary-foreground shadow-md"
-          : "hover:bg-secondary text-foreground"
-      )}
-    >
-      <Icon className="h-5 w-5" />
-      <span className="font-medium">{label}</span>
-    </button>
+  const navItems = useMemo(
+    () => [
+      {
+        key: "events" as const,
+        icon: Calendar,
+        label: "Eventos",
+        description: "Solicitações e gestão",
+        onClick: () => navigate("/dashboard"),
+        visible: true,
+      },
+      {
+        key: "approvals" as const,
+        icon: CheckSquare,
+        label: "Aprovações",
+        description: "Fila da supervisão",
+        onClick: () => navigate("/dashboard/approvals"),
+        visible: user?.role === "admin" || user?.role === "supervisor",
+      },
+      {
+        key: "mirror" as const,
+        icon: CalendarClock,
+        label: "Agenda Google",
+        description: "Espelho do calendário",
+        onClick: () => navigate("/dashboard/calendar"),
+        visible: true,
+      },
+      {
+        key: "admin" as const,
+        icon: Users2,
+        label: "Admin",
+        description: "Usuários e escopos",
+        onClick: () => navigate("/dashboard/admin"),
+        visible: user?.role === "admin",
+      },
+    ],
+    [navigate, user?.role],
   );
 
   if (loading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-          <p className="mt-4 text-muted-foreground">Carregando...</p>
+          <div className="h-12 w-12 mx-auto rounded-full border-b-2 border-primary animate-spin" />
+          <p className="mt-4 text-muted-foreground">Carregando dados do usuário...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-background">
-      <header className="bg-card border-b border-border shadow-sm sticky top-0 z-10">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
-              <Calendar className="w-6 h-6 text-primary" />
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,hsl(193_90%_92%),transparent_42%),radial-gradient(circle_at_bottom_left,hsl(36_95%_92%),transparent_35%)]">
+      <header className="sticky top-0 z-30 border-b border-white/70 bg-white/80 backdrop-blur">
+        <div className="mx-auto max-w-7xl px-4 py-3 flex items-center justify-between gap-3">
+          <button
+            onClick={() => navigate("/dashboard")}
+            className="min-w-0 flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm hover:shadow transition"
+          >
+            <div className="h-10 w-10 flex items-center justify-center rounded-xl bg-slate-900 text-white">
+              <Calendar className="h-5 w-5" />
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-foreground">Sistema de Eventos</h1>
-              <p className="text-sm text-muted-foreground">Gestão de Calendário</p>
+            <div className="min-w-0 text-left">
+              <h1 className="text-sm sm:text-base font-semibold truncate text-slate-900">Syncro Event Desk</h1>
+              <p className="text-xs text-slate-500 truncate">Orquestração de agenda Google</p>
             </div>
-          </div>
+          </button>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="relative h-12 w-12 rounded-full">
-                <Avatar className="h-12 w-12 border-2 border-primary/20">
-                  <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+              <Button variant="ghost" className="relative h-11 w-11 rounded-full">
+                <Avatar className="h-11 w-11 border border-slate-200 bg-white">
+                  <AvatarFallback className="bg-slate-900 text-white font-semibold">
                     {user.email?.charAt(0).toUpperCase() || "U"}
                   </AvatarFallback>
                 </Avatar>
@@ -116,27 +143,28 @@ const DashboardLayout = ({ children, activeTab }: DashboardLayoutProps) => {
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-64" align="end">
               <DropdownMenuLabel className="font-normal">
-                <div className="flex flex-col space-y-2">
+                <div className="space-y-1">
                   <p className="text-sm font-medium">{user.full_name || "Usuário"}</p>
                   <p className="text-xs text-muted-foreground">{user.email}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    {user.role === "supervisor" || user.role === "admin" ? (
-                      <div className="flex items-center gap-1 text-xs bg-primary/10 text-primary px-2 py-1 rounded-full">
+                  <div className="pt-1">
+                    {(user.role === "admin" || user.role === "supervisor") && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-1 text-xs text-primary">
                         <Shield className="h-3 w-3" />
-                        {user.role === "admin" ? "Admin" : "Supervisor"}
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1 text-xs bg-secondary text-secondary-foreground px-2 py-1 rounded-full">
+                        {user.role === "admin" ? "Administrador" : "Supervisor"}
+                      </span>
+                    )}
+                    {user.role === "coordenador" && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-1 text-xs text-secondary-foreground">
                         <User className="h-3 w-3" />
-                        Coordenador
-                      </div>
+                        Coordenação
+                      </span>
                     )}
                   </div>
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleLogout} className="text-destructive cursor-pointer">
-                <LogOut className="mr-2 h-4 w-4" />
+              <DropdownMenuItem className="text-destructive cursor-pointer" onClick={handleLogout}>
+                <LogOut className="h-4 w-4 mr-2" />
                 Sair
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -144,35 +172,43 @@ const DashboardLayout = ({ children, activeTab }: DashboardLayoutProps) => {
         </div>
       </header>
 
-      <div className="container mx-auto px-4 py-6 flex gap-6">
-        <aside className="w-64 flex-shrink-0">
-          <nav className="bg-card rounded-lg border border-border p-4 space-y-2 sticky top-24 shadow-sm">
-            <NavButton
-              icon={Calendar}
-              label="Meus Eventos"
-              value="events"
-              onClick={() => navigate("/dashboard")}
-            />
-            {(user.role === "supervisor" || user.role === "admin") && (
-              <NavButton
-                icon={CheckSquare}
-                label="Aprovações Pendentes"
-                value="approvals"
-                onClick={() => navigate("/dashboard/approvals")}
-              />
-            )}
-            <NavButton
-              icon={CalendarDays}
-              label="Visualizar Calendário"
-              value="calendar"
-              onClick={() => navigate("/dashboard/calendar")}
-            />
-          </nav>
-        </aside>
+      <div className="mx-auto max-w-7xl px-4 py-5">
+        <div className={cn("flex gap-4", isMobile ? "flex-col" : "items-start")}>
+          <aside className={cn("flex-shrink-0", isMobile ? "w-full" : "w-[280px]")}>
+            <nav
+              className={cn(
+                "rounded-2xl border border-white/70 bg-white/85 shadow-md backdrop-blur",
+                isMobile ? "flex gap-2 overflow-x-auto p-2" : "space-y-2 p-3 sticky top-24",
+              )}
+            >
+              {navItems
+                .filter((item) => item.visible)
+                .map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.key}
+                      onClick={item.onClick}
+                      className={cn(
+                        "w-full inline-flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-left transition-all",
+                        activeTab === item.key
+                          ? "bg-slate-900 text-white shadow"
+                          : "text-slate-700 hover:bg-slate-100",
+                      )}
+                    >
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <span className="min-w-0">
+                        <span className="block font-medium leading-tight">{item.label}</span>
+                        {!isMobile && <span className="block text-[11px] opacity-80">{item.description}</span>}
+                      </span>
+                    </button>
+                  );
+                })}
+            </nav>
+          </aside>
 
-        <main className="flex-1">
-          {children}
-        </main>
+          <main className="flex-1 min-w-0">{children}</main>
+        </div>
       </div>
     </div>
   );

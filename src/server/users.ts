@@ -1,0 +1,95 @@
+import db from "./db";
+import { hashPassword, type AuthUser } from "./auth";
+
+export type UserRole = AuthUser["role"];
+export type UserAuthType = AuthUser["auth_type"];
+
+export interface ManagedUser {
+  id: number;
+  email: string;
+  full_name: string | null;
+  avatar_url: string | null;
+  google_id: string | null;
+  auth_type: UserAuthType;
+  role: UserRole;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ManagedUserRow extends Omit<ManagedUser, "active"> {
+  active: number;
+}
+
+const mapManagedUser = (row: ManagedUserRow): ManagedUser => ({
+  ...row,
+  active: Boolean(row.active),
+});
+
+export const listUsers = async (): Promise<ManagedUser[]> => {
+  const rows = await db.query<ManagedUserRow>(
+    `SELECT id, email, full_name, avatar_url, google_id, auth_type, role, active, created_at, updated_at
+     FROM users
+     ORDER BY created_at DESC, id DESC`,
+  );
+
+  return rows.map(mapManagedUser);
+};
+
+interface CreateLocalUserInput {
+  email: string;
+  password: string;
+  fullName: string;
+  role: UserRole;
+}
+
+export const createLocalUser = async (input: CreateLocalUserInput): Promise<ManagedUser> => {
+  const email = input.email.trim().toLowerCase();
+  const fullName = input.fullName.trim();
+
+  const existing = await db.query<{ id: number }>("SELECT id FROM users WHERE email = ? LIMIT 1", [email]);
+  if (existing.length) {
+    throw new Error("email_already_exists");
+  }
+
+  const passwordHash = await hashPassword(input.password);
+
+  const result = await db.execute(
+    `INSERT INTO users (email, password_hash, full_name, auth_type, role, active)
+     VALUES (?, ?, ?, 'local', ?, 1)`,
+    [email, passwordHash, fullName || null, input.role],
+  );
+
+  const created = await getManagedUserById(result.insertId);
+  if (!created) {
+    throw new Error("user_creation_failed");
+  }
+
+  return created;
+};
+
+export const getManagedUserById = async (userId: number): Promise<ManagedUser | null> => {
+  const rows = await db.query<ManagedUserRow>(
+    `SELECT id, email, full_name, avatar_url, google_id, auth_type, role, active, created_at, updated_at
+     FROM users
+     WHERE id = ?
+     LIMIT 1`,
+    [userId],
+  );
+
+  if (!rows.length) {
+    return null;
+  }
+
+  return mapManagedUser(rows[0]);
+};
+
+export const updateUserRole = async (userId: number, role: UserRole): Promise<ManagedUser | null> => {
+  await db.execute("UPDATE users SET role = ? WHERE id = ?", [role, userId]);
+  return getManagedUserById(userId);
+};
+
+export const updateUserActive = async (userId: number, active: boolean): Promise<ManagedUser | null> => {
+  await db.execute("UPDATE users SET active = ? WHERE id = ?", [active ? 1 : 0, userId]);
+  return getManagedUserById(userId);
+};

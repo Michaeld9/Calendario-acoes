@@ -1,73 +1,139 @@
-# Welcome to your Lovable project
+# Syncro Event Desk
 
-## Project info
+Plataforma de gestão de eventos com fluxo por tiers e espelhamento do Google Calendar por `calendarId`.
 
-**URL**: https://lovable.dev/projects/5e82fbff-eb65-40c9-8644-81bdf1d2f803
+## O que está implementado
 
-## How can I edit this code?
+- Login local (JWT) e login Google reativado na tela inicial.
+- Gestão de usuários na aba Admin:
+  - criação de usuários locais,
+  - usuários locais e Google na mesma lista,
+  - alteração de tier (`admin`, `supervisor`, `coordenador`),
+  - ativação/desativação de contas.
+- Fluxo de escopo:
+  - `coordenador`: cria evento pendente para aprovação.
+  - `supervisor` e `admin`: criam/alteram/excluem diretamente com sincronização no Google Calendar.
+  - aprovação de pendentes publica no Google Calendar.
+- Aba de agenda espelhada:
+  - lista eventos do Google Calendar configurado por ID,
+  - mostra vínculo com eventos internos quando existir,
+  - permite abrir no Google Calendar.
 
-There are several ways of editing your application.
+## Stack
 
-**Use Lovable**
+- Frontend: React + Vite + TypeScript + shadcn/ui
+- Backend: Node.js + Express + TypeScript
+- Banco: MySQL 8
+- Auth: JWT + Google Identity token (validado no backend)
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/5e82fbff-eb65-40c9-8644-81bdf1d2f803) and start prompting.
+## Requisitos
 
-Changes made via Lovable will be committed automatically to this repo.
+- Node.js 18+
+- npm 9+
+- Docker + Docker Compose
 
-**Use your preferred IDE**
+## Instalação rápida
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+1. Copie o ambiente:
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+```bash
+cp .env.example .env
 ```
 
-**Edit a file directly in GitHub**
+2. Suba o banco:
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+```bash
+docker-compose up -d
+```
 
-**Use GitHub Codespaces**
+3. Instale dependências:
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+```bash
+npm install
+```
 
-## What technologies are used for this project?
+4. Rode backend:
 
-This project is built with:
+```bash
+npm run dev:server
+```
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+5. Em outro terminal, rode frontend:
 
-## How can I deploy this project?
+```bash
+npm run dev:client
+```
 
-Simply open [Lovable](https://lovable.dev/projects/5e82fbff-eb65-40c9-8644-81bdf1d2f803) and click on Share -> Publish.
+6. Acesse:
+- Frontend: `http://localhost:8080`
+- API health: `http://localhost:3001/health`
 
-## Can I connect a custom domain to my Lovable project?
+## Variáveis importantes
 
-Yes, you can!
+### Frontend
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+- `VITE_API_URL`
+- `VITE_GOOGLE_CLIENT_ID`
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+### Backend
+
+- `PORT`
+- `CORS_ORIGIN`
+- `JWT_SECRET`
+
+### Admin inicial
+
+- `ADMIN_EMAIL`
+- `ADMIN_PASSWORD`
+- `ADMIN_NAME`
+
+### Google Login
+
+- `GOOGLE_CLIENT_ID`
+
+### Google Calendar (espelhamento e sincronização)
+
+- `GOOGLE_SERVICE_ACCOUNT_EMAIL`
+- `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`
+- `GOOGLE_DELEGATED_USER_EMAIL`
+- `GOOGLE_CALENDAR_SEND_UPDATES` (`all`, `externalOnly`, `none`)
+- `GOOGLE_ALLOW_EVENT_WITHOUT_ATTENDEES_FALLBACK` (`false` recomendado)
+- `GOOGLE_CALENDAR_ID` (fallback)
+- `GOOGLE_CALENDAR_TIMEZONE`
+
+> Também é possível definir/alterar o `calendarId` direto na aba Admin da aplicação (persistido no banco em `app_settings`).
+
+### Convidados no Google Calendar
+
+Para convidados funcionarem com conta de servico:
+
+1. O calendario precisa estar em Google Workspace.
+2. Ative Domain-wide delegation na Service Account no Google Cloud.
+3. Em `admin.google.com`, autorize o Client ID da Service Account com o escopo `https://www.googleapis.com/auth/calendar`.
+4. Defina `GOOGLE_DELEGATED_USER_EMAIL` com um usuario do dominio que tenha permissao de edicao no calendario.
+5. Reinicie a API.
+
+Sem isso, o Google costuma bloquear attendees com erro de permissao.
+
+## Scripts
+
+- `npm run dev` (frontend)
+- `npm run dev:client`
+- `npm run dev:server`
+- `npm run build`
+- `npm run lint`
+
+## Banco de dados
+
+O `init.sql` cria:
+
+- `users`
+- `events`
+- `app_settings`
+
+Se precisar recriar tudo:
+
+```bash
+docker-compose down -v
+docker-compose up -d
+```
