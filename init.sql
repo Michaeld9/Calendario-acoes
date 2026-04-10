@@ -3,6 +3,7 @@ SET CHARACTER SET utf8mb4;
 
 USE event_calendar;
 
+DROP TABLE IF EXISTS event_audit_logs;
 DROP TABLE IF EXISTS events;
 DROP TABLE IF EXISTS users;
 DROP TABLE IF EXISTS app_settings;
@@ -52,6 +53,18 @@ CREATE TABLE events (
   CONSTRAINT fk_events_approved_by FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE event_audit_logs (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  action VARCHAR(80) NOT NULL,
+  event_id INT UNSIGNED NULL,
+  event_title VARCHAR(255) NULL,
+  actor_user_id INT UNSIGNED NOT NULL,
+  actor_email VARCHAR(255) NOT NULL,
+  actor_name VARCHAR(255) NULL,
+  details TEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE app_settings (
   setting_key VARCHAR(120) PRIMARY KEY,
   setting_value TEXT NULL,
@@ -65,19 +78,7 @@ CREATE INDEX idx_events_created_by ON events (created_by);
 CREATE INDEX idx_events_status ON events (status);
 CREATE INDEX idx_events_start_date ON events (start_date);
 CREATE INDEX idx_events_approved_by ON events (approved_by);
-
-INSERT INTO users (email, password_hash, full_name, auth_type, role, active)
-VALUES (
-  "admin@app.local",
-  "$2a$10$S9gZh1O4jfInAuQ6JtGGc.D1urMKoTTEmbvmjJRAqCIqxyhWMDBom",
-  "Administrador do Sistema",
-  "local",
-  "admin",
-  1
-)
-ON DUPLICATE KEY UPDATE
-  password_hash = VALUES(password_hash),
-  full_name = VALUES(full_name),
-  auth_type = "local",
-  role = "admin",
-  active = 1;
+CREATE INDEX idx_event_audit_logs_created_at ON event_audit_logs (created_at);
+CREATE INDEX idx_event_audit_logs_actor_user_id ON event_audit_logs (actor_user_id);
+CREATE INDEX idx_event_audit_logs_event_id ON event_audit_logs (event_id);
+CREATE INDEX idx_event_audit_logs_action ON event_audit_logs (action);

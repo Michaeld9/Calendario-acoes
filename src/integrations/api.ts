@@ -77,6 +77,12 @@ export const usersApi = {
 
   updateUserActive: (userId: number, active: boolean) =>
     api.patch(`/users/${userId}/active`, { active }),
+
+  updateLocalUserPassword: (userId: number, password: string) =>
+    api.patch(`/users/${userId}/password`, { password }),
+
+  deleteUser: (userId: number) =>
+    api.post(`/users/${userId}/delete`),
 };
 
 export const settingsApi = {
@@ -85,6 +91,11 @@ export const settingsApi = {
 
   updateGoogleCalendarSettings: (calendarId: string) =>
     api.put('/settings/google-calendar', { calendarId }),
+};
+
+export const logsApi = {
+  getEventLogs: (limit = 200) =>
+    api.get('/logs/events', { params: { limit } }),
 };
 
 export default api;

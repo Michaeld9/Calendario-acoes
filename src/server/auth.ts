@@ -1,8 +1,62 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { randomBytes } from "node:crypto";
 import db from "./db";
 
-const JWT_SECRET = process.env.JWT_SECRET || "default_secret_change_me";
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DUMMY_BCRYPT_HASH = "$2a$10$7EqJtq98hPqEX7fNZaFWoOhi8VJx2hFQfA2QfT0V6xU1U8n7XJ7f6"; // "password"
+
+const isStrongJwtSecret = (secret: string): boolean => {
+  const value = secret.trim();
+  if (value.length < 32) {
+    return false;
+  }
+
+  const lowerValue = value.toLowerCase();
+  if (
+    lowerValue.includes("change_me") ||
+    lowerValue.includes("troque_este") ||
+    lowerValue.includes("default") ||
+    lowerValue === "jwt_secret"
+  ) {
+    return false;
+  }
+
+  return true;
+};
+
+const isStrongPassword = (password: string): boolean => {
+  if (password.length < 12) {
+    return false;
+  }
+
+  const hasUpper = /[A-Z]/.test(password);
+  const hasLower = /[a-z]/.test(password);
+  const hasDigit = /\d/.test(password);
+  const hasSpecial = /[^A-Za-z0-9]/.test(password);
+
+  return hasUpper && hasLower && hasDigit && hasSpecial;
+};
+
+const resolveJwtSecret = (): string => {
+  const configuredSecret = String(process.env.JWT_SECRET || "").trim();
+  if (configuredSecret && isStrongJwtSecret(configuredSecret)) {
+    return configuredSecret;
+  }
+
+  const nodeEnv = String(process.env.NODE_ENV || "development").trim().toLowerCase();
+  if (nodeEnv === "production") {
+    throw new Error("invalid_or_missing_jwt_secret");
+  }
+
+  const ephemeralSecret = randomBytes(48).toString("hex");
+  console.warn(
+    "[security] JWT_SECRET ausente/fraco. Gerando segredo efemero para desenvolvimento; defina JWT_SECRET forte no .env.",
+  );
+  return ephemeralSecret;
+};
+
+const JWT_SECRET = resolveJwtSecret();
 
 export interface AuthUser {
   id: number;
@@ -72,12 +126,17 @@ export const getUserById = async (id: number): Promise<AuthUser | null> => {
 };
 
 export const loginLocal = async (email: string, password: string) => {
+  if (!EMAIL_PATTERN.test(email)) {
+    throw new Error("invalid_credentials");
+  }
+
   const rows = await db.query<UserRow>(
     "SELECT id, email, full_name, role, password_hash, auth_type, google_id FROM users WHERE email = ? AND auth_type = 'local' AND active = 1 LIMIT 1",
     [email],
   );
 
   if (!rows.length || !rows[0].password_hash) {
+    await verifyPassword(password, DUMMY_BCRYPT_HASH);
     throw new Error("invalid_credentials");
   }
 
@@ -173,12 +232,28 @@ export const loginGoogle = async (
 };
 
 export const ensureAdminUser = async (): Promise<void> => {
-  const adminEmail = process.env.ADMIN_EMAIL;
-  const adminPassword = process.env.ADMIN_PASSWORD;
+  const adminEmail = String(process.env.ADMIN_EMAIL || "").trim().toLowerCase();
+  const adminPassword = String(process.env.ADMIN_PASSWORD || "");
   const adminName = process.env.ADMIN_NAME || "Administrador do Sistema";
+  const adminCountRows = await db.query<{ total: number }>(
+    "SELECT COUNT(*) AS total FROM users WHERE role = 'admin' AND active = 1",
+  );
+  const hasActiveAdmin = Number(adminCountRows[0]?.total || 0) > 0;
 
   if (!adminEmail || !adminPassword) {
+    if (!hasActiveAdmin) {
+      throw new Error("missing_admin_bootstrap");
+    }
+
     return;
+  }
+
+  if (!EMAIL_PATTERN.test(adminEmail)) {
+    throw new Error("invalid_admin_email");
+  }
+
+  if (!isStrongPassword(adminPassword)) {
+    throw new Error("weak_admin_password");
   }
 
   const passwordHash = await hashPassword(adminPassword);

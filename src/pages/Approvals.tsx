@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { eventsApi } from "@/integrations/api";
+import { getEventTypeBadgeClass } from "@/lib/eventTypeColors";
 
 interface Event {
   id: number;
@@ -150,7 +151,11 @@ const Approvals = () => {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                         <div>
                           <strong className="text-foreground">Tipo</strong>
-                          <p className="text-muted-foreground">{event.event_type}</p>
+                          <div className="mt-1">
+                            <Badge className={getEventTypeBadgeClass(event.event_type)}>
+                              {event.event_type || "Nao informado"}
+                            </Badge>
+                          </div>
                         </div>
                         <div>
                           <strong className="text-foreground">Período</strong>

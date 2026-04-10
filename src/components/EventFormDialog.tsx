@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -36,6 +36,57 @@ const eventTypes = [
   "Festa",
 ] as const;
 
+const predefinedInvolvedSectors = [
+  { id: "marketing", name: "Marketing", email: "marketing.saopaulo@lasalle.org.br" },
+  { id: "servicos-gerais", name: "Serviços Gerais/Manutenção", email: "marcio.nascimento@lasalle.org.br" },
+  { id: "portaria", name: "Portaria", email: "portaria_clssp@lasalle.org.br" },
+  { id: "secretaria", name: "Secretaria", email: "secretaria.saopaulo@lasalle.org.br" },
+  { id: "suporte-ti", name: "Suporte T.I", email: "suporte_ti_clssp@lasalle.org.br" },
+] as const;
+
+type PredefinedSectorId = (typeof predefinedInvolvedSectors)[number]["id"];
+
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const splitEmailTokens = (value?: string | null): string[] => {
+  if (!value?.trim()) {
+    return [];
+  }
+
+  return value
+    .split(/[,\n;]+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+};
+
+const dedupeTokens = (tokens: string[]): string[] => {
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+
+  for (const token of tokens) {
+    const key = token.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    deduped.push(token);
+  }
+
+  return deduped;
+};
+
+const findInvalidInvolvedEmails = (value?: string): string[] => {
+  const invalid: string[] = [];
+  for (const token of splitEmailTokens(value)) {
+    if (!emailPattern.test(token.toLowerCase())) {
+      invalid.push(token);
+    }
+  }
+
+  return invalid;
+};
+
 const formSchema = z
   .object({
     title: z.string().trim().min(3, "O título deve ter no mínimo 3 caracteres."),
@@ -62,7 +113,7 @@ const formSchema = z
     },
   )
   .superRefine((values, context) => {
-    if (values.all_day) return;
+    if (!values.all_day) {
 
     if (!values.start_time) {
       context.addIssue({
@@ -92,6 +143,17 @@ const formSchema = z
         path: ["end_time"],
       });
     }
+
+    }
+
+    const invalidEmails = findInvalidInvolvedEmails(values.involved_emails);
+    if (invalidEmails.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `E-mail(s) invalido(s): ${invalidEmails.join(", ")}`,
+        path: ["involved_emails"],
+      });
+    }
   });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -118,7 +180,23 @@ interface EventFormDialogProps {
 const EventFormDialog = ({ open, onOpenChange, event, directPublish, onSuccess }: EventFormDialogProps) => {
   const { toast } = useToast();
   const [submitting, setSubmitting] = useState(false);
+  const [selectedSectorIds, setSelectedSectorIds] = useState<PredefinedSectorId[]>([]);
+  const [additionalEmails, setAdditionalEmails] = useState("");
   const isEditing = useMemo(() => Boolean(event), [event]);
+
+  const sectorByEmail = useMemo(
+    () =>
+      new Map(predefinedInvolvedSectors.map((sector) => [sector.email.toLowerCase(), sector.id] as const)),
+    [],
+  );
+
+  const buildInvolvedEmailsValue = useCallback((nextSelectedIds: PredefinedSectorId[], nextAdditionalEmails: string) => {
+    const selectedEmails = predefinedInvolvedSectors
+      .filter((sector) => nextSelectedIds.includes(sector.id))
+      .map((sector) => sector.email);
+    const additionalTokens = splitEmailTokens(nextAdditionalEmails);
+    return dedupeTokens([...selectedEmails, ...additionalTokens]).join(", ");
+  }, []);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -137,6 +215,23 @@ const EventFormDialog = ({ open, onOpenChange, event, directPublish, onSuccess }
 
   useEffect(() => {
     if (event) {
+      const selectedIds = new Set<PredefinedSectorId>();
+      const additionalTokens: string[] = [];
+
+      for (const token of splitEmailTokens(event.involved_emails)) {
+        const matchedSectorId = sectorByEmail.get(token.toLowerCase());
+        if (matchedSectorId) {
+          selectedIds.add(matchedSectorId);
+        } else {
+          additionalTokens.push(token);
+        }
+      }
+
+      const nextSelectedSectorIds = Array.from(selectedIds);
+      const nextAdditionalEmails = additionalTokens.join(", ");
+      setSelectedSectorIds(nextSelectedSectorIds);
+      setAdditionalEmails(nextAdditionalEmails);
+
       form.reset({
         title: event.title,
         event_type: event.event_type,
@@ -145,10 +240,13 @@ const EventFormDialog = ({ open, onOpenChange, event, directPublish, onSuccess }
         all_day: event.all_day,
         start_time: event.start_time || "",
         end_time: event.end_time || "",
-        involved_emails: event.involved_emails || "",
+        involved_emails: buildInvolvedEmailsValue(nextSelectedSectorIds, nextAdditionalEmails),
         description: event.description || "",
       });
     } else {
+      setSelectedSectorIds([]);
+      setAdditionalEmails("");
+
       form.reset({
         title: "",
         event_type: undefined,
@@ -161,7 +259,7 @@ const EventFormDialog = ({ open, onOpenChange, event, directPublish, onSuccess }
         description: "",
       });
     }
-  }, [event, form, open]);
+  }, [event, form, open, sectorByEmail, buildInvolvedEmailsValue]);
 
   const allDay = form.watch("all_day");
 
@@ -357,14 +455,42 @@ const EventFormDialog = ({ open, onOpenChange, event, directPublish, onSuccess }
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Setores envolvidos (e-mail)</FormLabel>
+                  <div className="grid gap-2 rounded-md border border-slate-200 p-3">
+                    {predefinedInvolvedSectors.map((sector) => (
+                      <label key={sector.id} className="flex cursor-pointer items-start gap-3 rounded-md p-2 hover:bg-slate-50">
+                        <Checkbox
+                          checked={selectedSectorIds.includes(sector.id)}
+                          onCheckedChange={(checked) => {
+                            const nextSelectedSectorIds = checked
+                              ? [...selectedSectorIds, sector.id]
+                              : selectedSectorIds.filter((id) => id !== sector.id);
+                            setSelectedSectorIds(nextSelectedSectorIds);
+                            field.onChange(buildInvolvedEmailsValue(nextSelectedSectorIds, additionalEmails));
+                          }}
+                        />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-slate-900">{sector.name}</p>
+                          <p className="truncate text-xs text-muted-foreground">{sector.email}</p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
                   <FormControl>
                     <Textarea
-                      placeholder="email1@dominio.com, email2@dominio.com"
+                      placeholder="E-mails adicionais: email1@dominio.com, email2@dominio.com"
                       className="min-h-[80px]"
-                      {...field}
+                      value={additionalEmails}
+                      onChange={(event) => {
+                        const nextAdditionalEmails = event.target.value;
+                        setAdditionalEmails(nextAdditionalEmails);
+                        field.onChange(buildInvolvedEmailsValue(selectedSectorIds, nextAdditionalEmails));
+                      }}
                     />
                   </FormControl>
-                  <FormDescription>Opcional. Separe e-mails por virgula, ponto e virgula ou quebra de linha.</FormDescription>
+                  <FormDescription>
+                    Opcional. Selecione setores fixos e, se precisar, adicione e-mails extras separados por virgula, ponto e
+                    virgula ou quebra de linha.
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}

@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Calendar, CalendarClock, CheckSquare, LogOut, Shield, User, Users2 } from "lucide-react";
+import { Calendar, CalendarClock, CheckSquare, LogOut, ScrollText, Shield, User, Users2 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 
 interface DashboardLayoutProps {
   children: ReactNode;
-  activeTab: "events" | "approvals" | "mirror" | "admin";
+  activeTab: "events" | "approvals" | "mirror" | "admin" | "logs";
 }
 
 interface StoredUser {
@@ -99,6 +99,14 @@ const DashboardLayout = ({ children, activeTab }: DashboardLayoutProps) => {
         onClick: () => navigate("/dashboard/admin"),
         visible: user?.role === "admin",
       },
+      {
+        key: "logs" as const,
+        icon: ScrollText,
+        label: "Logs",
+        description: "Auditoria de eventos",
+        onClick: () => navigate("/dashboard/admin/logs"),
+        visible: user?.role === "admin",
+      },
     ],
     [navigate, user?.role],
   );
@@ -126,8 +134,8 @@ const DashboardLayout = ({ children, activeTab }: DashboardLayoutProps) => {
               <Calendar className="h-5 w-5" />
             </div>
             <div className="min-w-0 text-left">
-              <h1 className="text-sm sm:text-base font-semibold truncate text-slate-900">Syncro Event Desk</h1>
-              <p className="text-xs text-slate-500 truncate">Orquestração de agenda Google</p>
+              <h1 className="text-sm sm:text-base font-semibold truncate text-slate-900">Calendário de ações</h1>
+              <p className="text-xs text-slate-500 truncate">Oficial</p>
             </div>
           </button>
 

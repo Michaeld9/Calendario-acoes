@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { getEventTypeBadgeClass, getEventTypeDayChipClass } from "@/lib/eventTypeColors";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { eventsApi } from "@/integrations/api";
@@ -29,6 +30,7 @@ type UserRole = "admin" | "supervisor" | "coordenador";
 interface MirroredEvent {
   google_event_id: string;
   title: string;
+  event_type: string | null;
   description: string | null;
   start_date: string;
   end_date: string;
@@ -40,14 +42,6 @@ interface MirroredEvent {
   updated_at: string | null;
   local_event_id: number | null;
   local_event_status: "pending" | "approved" | "rejected" | null;
-}
-
-interface CalendarMeta {
-  calendarId: string;
-  timezone: string;
-  source: "database" | "env" | "unset";
-  fromDate: string;
-  toDate: string;
 }
 
 interface EditableEvent {
@@ -75,7 +69,6 @@ const CalendarView = () => {
   const [toDate, setToDate] = useState("");
   const [selectedDate, setSelectedDate] = useState("");
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [calendarMeta, setCalendarMeta] = useState<CalendarMeta | null>(null);
   const [showEventDialog, setShowEventDialog] = useState(false);
   const [editingEvent, setEditingEvent] = useState<EditableEvent | null>(null);
   const [userRole, setUserRole] = useState<UserRole | null>(null);
@@ -115,7 +108,6 @@ const CalendarView = () => {
     try {
       const response = await eventsApi.getMirrorEvents({ from: fromDate, to: toDate });
       setEvents(response.data.events || []);
-      setCalendarMeta(response.data.calendar || null);
     } catch (error: unknown) {
       const apiError = error as { response?: { data?: { error?: string } }; message?: string };
       toast({
@@ -275,23 +267,12 @@ const CalendarView = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
               <Input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} />
               <Input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} />
               <Button variant="outline" onClick={fetchMirror} disabled={loading || !fromDate || !toDate}>
                 Aplicar intervalo
               </Button>
-              <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                {calendarMeta?.calendarId ? (
-                  <>
-                    <span className="font-semibold">Calendar ID:</span> {calendarMeta.calendarId}
-                    <br />
-                    <span className="font-semibold">Timezone:</span> {calendarMeta.timezone}
-                  </>
-                ) : (
-                  "Configure o Calendar ID no painel Admin."
-                )}
-              </div>
             </div>
           </div>
         </CardHeader>
@@ -371,8 +352,8 @@ const CalendarView = () => {
                             <div
                               key={`${dateKey}-${event.google_event_id}`}
                               className={cn(
-                                "truncate rounded px-1.5 py-0.5 text-[10px] text-white",
-                                event.local_event_id ? "bg-emerald-600" : "bg-slate-500",
+                                "truncate rounded px-1.5 py-0.5 text-[10px] font-medium",
+                                getEventTypeDayChipClass(event.event_type),
                               )}
                               title={event.title}
                             >
@@ -394,7 +375,7 @@ const CalendarView = () => {
                   Eventos em {selectedDateLabel || "-"}
                 </h3>
                 <p className="mb-3 text-xs text-muted-foreground">
-                  Verde: vinculado ao fluxo interno | Cinza: evento externo vindo apenas do Google.
+                  A cor do evento representa o tipo. Eventos sem tipo interno usam a cor padrao (ciano).
                 </p>
 
                 {selectedDayEvents.length === 0 && (
@@ -409,6 +390,9 @@ const CalendarView = () => {
                           <div className="min-w-0 flex-1">
                             <div className="mb-1 flex flex-wrap items-center gap-2">
                               <h4 className="text-sm font-semibold text-slate-900">{event.title}</h4>
+                              <Badge className={getEventTypeBadgeClass(event.event_type)}>
+                                {event.event_type || "Sem tipo interno"}
+                              </Badge>
                               <Badge variant="outline">{event.all_day ? "Dia inteiro" : "Com horário"}</Badge>
                               {event.local_event_id ? (
                                 <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">

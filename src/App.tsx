@@ -9,6 +9,7 @@ import Dashboard from "./pages/Dashboard";
 import Approvals from "./pages/Approvals";
 import CalendarView from "./pages/CalendarView";
 import AdminUsers from "./pages/AdminUsers";
+import AdminLogs from "./pages/AdminLogs";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -51,6 +52,14 @@ const App = () => (
             element={
               <ProtectedRoute>
                 <AdminUsers />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dashboard/admin/logs"
+            element={
+              <ProtectedRoute>
+                <AdminLogs />
               </ProtectedRoute>
             }
           />

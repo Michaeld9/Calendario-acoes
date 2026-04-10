@@ -40,6 +40,8 @@ Plataforma de gestão de eventos com fluxo por tiers e espelhamento do Google Ca
 cp .env.example .env
 ```
 
+Defina no `.env` um `ADMIN_EMAIL` valido e `ADMIN_PASSWORD` forte antes de iniciar a API pela primeira vez.
+
 2. Suba o banco:
 
 ```bash
@@ -80,6 +82,8 @@ npm run dev:client
 - `PORT`
 - `CORS_ORIGIN`
 - `JWT_SECRET`
+- `AUTH_RATE_LIMIT_MAX_ATTEMPTS`
+- `AUTH_RATE_LIMIT_WINDOW_MS`
 
 ### Admin inicial
 
@@ -87,12 +91,21 @@ npm run dev:client
 - `ADMIN_PASSWORD`
 - `ADMIN_NAME`
 
+> Seguranca: `ADMIN_PASSWORD` agora precisa ter no minimo 12 caracteres com maiuscula, minuscula, numero e simbolo.
+> O projeto nao cria mais usuario admin padrao no `init.sql`; o bootstrap do admin depende dessas variaveis no `.env`.
+
 ### Google Login
 
 - `GOOGLE_CLIENT_ID`
+- `GOOGLE_ALLOWED_EMAIL_DOMAINS` (opcional, lista separada por virgula)
+- `GOOGLE_ALLOWED_EMAILS` (opcional, lista separada por virgula)
 
 ### Google Calendar (espelhamento e sincronização)
 
+- `GOOGLE_CALENDAR_AUTH_MODE` (`service_account` ou `oauth_user`)
+- `GOOGLE_CALENDAR_ACCOUNT_EMAIL`
+- `GOOGLE_CALENDAR_APP_PASSWORD` (referência operacional; não é usada diretamente pela API)
+- `GOOGLE_CALENDAR_USER_REFRESH_TOKEN` (necessário quando `GOOGLE_CALENDAR_AUTH_MODE=oauth_user`)
 - `GOOGLE_SERVICE_ACCOUNT_EMAIL`
 - `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`
 - `GOOGLE_DELEGATED_USER_EMAIL`
@@ -114,6 +127,16 @@ Para convidados funcionarem com conta de servico:
 5. Reinicie a API.
 
 Sem isso, o Google costuma bloquear attendees com erro de permissao.
+
+### Modo oauth_user (sem delegação de domínio)
+
+Se você não puder configurar Domain-wide delegation agora, use:
+
+1. `GOOGLE_CALENDAR_AUTH_MODE=oauth_user`
+2. `GOOGLE_CALENDAR_ACCOUNT_EMAIL=<conta_google_que_vai_editar_o_calendario>`
+3. `GOOGLE_CALENDAR_USER_REFRESH_TOKEN=<refresh_token_oauth_dessa_conta>`
+
+Com esse modo, os eventos são publicados como essa conta Google e os convidados funcionam, desde que a conta tenha permissão de edição no calendário.
 
 ## Scripts
 

@@ -7,8 +7,18 @@ import {
   updateGoogleCalendarEvent,
   verifyGoogleIdToken,
 } from "./google";
+import { createEventAuditLog, listEventAuditLogs } from "./logs";
 import { getGoogleCalendarSettings, updateGoogleCalendarId } from "./settings";
-import { createLocalUser, listUsers, type UserRole, updateUserActive, updateUserRole } from "./users";
+import {
+  createLocalUser,
+  deleteUserById,
+  getManagedUserById,
+  listUsers,
+  type UserRole,
+  updateLocalUserPassword,
+  updateUserActive,
+  updateUserRole,
+} from "./users";
 
 export interface Request {
   method: string;
@@ -80,6 +90,45 @@ const parseEventId = (value: unknown): number | null => {
   return id;
 };
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EVENT_TYPE_VALUES = new Set([
+  "Evento",
+  "Ação Pontual",
+  "Projeto Institucional",
+  "Projeto Pedagógico",
+  "Expedição Pedagógica",
+  "Formação",
+  "Festa",
+]);
+const TITLE_MAX_LENGTH = 255;
+const DESCRIPTION_MAX_LENGTH = 4000;
+const INVOLVED_EMAILS_MAX_LENGTH = 4000;
+
+const normalizeEmail = (value: unknown): string => {
+  return String(value || "").trim().toLowerCase();
+};
+
+const isValidEmail = (value: string): boolean => {
+  return EMAIL_PATTERN.test(value);
+};
+
+const normalizeEventType = (value: unknown): string | null => {
+  const raw = String(value || "").trim();
+  if (!raw || !EVENT_TYPE_VALUES.has(raw)) {
+    return null;
+  }
+
+  return raw;
+};
+
+const isStrongPassword = (value: string): boolean => {
+  if (value.length < 12) {
+    return false;
+  }
+
+  return /[A-Z]/.test(value) && /[a-z]/.test(value) && /\d/.test(value) && /[^A-Za-z0-9]/.test(value);
+};
+
 const normalizeDateString = (value: unknown): string | null => {
   const date = String(value || "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -143,6 +192,42 @@ const normalizeInvolvedEmails = (value: unknown): string | null => {
   return normalized || null;
 };
 
+const parseAndValidateInvolvedEmails = (
+  value: unknown,
+): { normalized: string | null; invalidEmails: string[] } => {
+  const raw = normalizeInvolvedEmails(value);
+  if (!raw) {
+    return { normalized: null, invalidEmails: [] };
+  }
+
+  if (raw.length > INVOLVED_EMAILS_MAX_LENGTH) {
+    return { normalized: null, invalidEmails: ["campo muito longo"] };
+  }
+
+  const validEmails = new Set<string>();
+  const invalidEmails: string[] = [];
+
+  for (const token of raw.split(/[,\n;]+/)) {
+    const trimmed = token.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    const normalizedEmail = trimmed.toLowerCase();
+    if (!isValidEmail(normalizedEmail)) {
+      invalidEmails.push(trimmed);
+      continue;
+    }
+
+    validEmails.add(normalizedEmail);
+  }
+
+  return {
+    normalized: validEmails.size ? Array.from(validEmails).join(", ") : null,
+    invalidEmails,
+  };
+};
+
 const parseRole = (value: unknown): UserRole | null => {
   const role = String(value || "").trim();
   if (role === "admin" || role === "supervisor" || role === "coordenador") {
@@ -184,6 +269,7 @@ const mapEventForGoogle = (event: eventService.Event) => ({
   title: event.title,
   description: event.description,
   involved_emails: event.involved_emails,
+  event_type: event.event_type,
   start_date: event.start_date,
   end_date: event.end_date,
   start_time: event.start_time,
@@ -192,7 +278,40 @@ const mapEventForGoogle = (event: eventService.Event) => ({
   local_event_id: event.id,
 });
 
+const registerEventAudit = async (
+  user: AuthUser,
+  action: string,
+  event: { id?: number | null; title?: string | null } | null,
+  details?: string | null,
+): Promise<void> => {
+  try {
+    await createEventAuditLog({
+      action,
+      eventId: event?.id ?? null,
+      eventTitle: event?.title ?? null,
+      actorUserId: user.id,
+      actorEmail: user.email,
+      actorName: user.full_name,
+      details: details || null,
+    });
+  } catch (error) {
+    console.error("Audit log error:", error);
+  }
+};
+
 const getGoogleCalendarErrorDetail = (error: Error): string | null => {
+  if (error.message === "google_calendar_oauth_user_not_configured") {
+    return "Modo oauth_user ativo, mas faltam GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET ou GOOGLE_CALENDAR_USER_REFRESH_TOKEN.";
+  }
+
+  if (error.message === "google_calendar_credentials_not_configured") {
+    return "Credenciais de Service Account nao configuradas.";
+  }
+
+  if (error.message === "google_email_not_allowed") {
+    return "Esta conta Google nao esta autorizada para acessar a plataforma.";
+  }
+
   const prefix = "google_calendar_api_error:";
   if (!error.message.startsWith(prefix)) {
     return null;
@@ -204,15 +323,32 @@ const getGoogleCalendarErrorDetail = (error: Error): string | null => {
   }
 
   const lowerDetail = detail.toLowerCase();
+
+  if (lowerDetail.includes("not found")) {
+    return "Calendario Google nao encontrado ou sem permissao de acesso.";
+  }
+
+  if (lowerDetail.includes("quota") || lowerDetail.includes("rate limit")) {
+    return "Limite de requisicoes da API Google Calendar atingido. Tente novamente em instantes.";
+  }
+
+  if (lowerDetail.includes("insufficient permission") || lowerDetail.includes("forbidden")) {
+    return "Permissao insuficiente para operar no Google Calendar configurado.";
+  }
+
   if (
     lowerDetail.includes("forbiddenforserviceaccounts") ||
     lowerDetail.includes("service accounts cannot invite attendees") ||
     lowerDetail.includes("domain-wide delegation")
   ) {
-    return `${detail}. Configure Domain-wide delegation e GOOGLE_DELEGATED_USER_EMAIL para permitir convidados.`;
+    return "Convidados bloqueados para conta de servico. Configure Domain-wide delegation e GOOGLE_DELEGATED_USER_EMAIL.";
   }
 
-  return detail;
+  if (lowerDetail.includes("invalid_grant") || lowerDetail.includes("token")) {
+    return "Credenciais OAuth do Google invalidas ou expiradas.";
+  }
+
+  return "Falha de comunicacao com Google Calendar.";
 };
 
 export async function handleRequest(req: Request): Promise<Response> {
@@ -242,6 +378,10 @@ export async function handleRequest(req: Request): Promise<Response> {
       return await handleSettings(req, action);
     }
 
+    if (resource === "logs") {
+      return await handleLogs(req, action);
+    }
+
     if (resource === "health" && req.method === "GET") {
       return { status: 200, body: { ok: true } };
     }
@@ -259,11 +399,15 @@ export async function handleRequest(req: Request): Promise<Response> {
 async function handleAuth(req: Request, action: string): Promise<Response> {
   if (req.method === "POST" && action === "login-local") {
     const body = parseBody(req.body);
-    const email = String(body.email || "").trim().toLowerCase();
+    const email = normalizeEmail(body.email);
     const password = String(body.password || "");
 
     if (!email || !password) {
       return { status: 400, body: { error: "Informe e-mail e senha" } };
+    }
+
+    if (!isValidEmail(email)) {
+      return { status: 400, body: { error: "E-mail invalido" } };
     }
 
     try {
@@ -307,6 +451,10 @@ async function handleAuth(req: Request, action: string): Promise<Response> {
         return { status: 401, body: { error: "Token Google invalido" } };
       }
 
+      if (error.message === "google_email_not_allowed") {
+        return { status: 403, body: { error: "Conta Google nao autorizada para este ambiente" } };
+      }
+
       if (error.message === "user_inactive") {
         return { status: 403, body: { error: "Usuario desativado. Procure um administrador." } };
       }
@@ -337,6 +485,32 @@ async function handleUsers(req: Request, action: string, subActions: string[]): 
     return { status: 403, body: { error: "Apenas administradores podem gerenciar usuarios" } };
   }
 
+  const performUserDeletion = async (userId: number): Promise<Response> => {
+    if (userId === user.id) {
+      return { status: 400, body: { error: "Nao e permitido excluir seu proprio usuario" } };
+    }
+
+    const targetUser = await getManagedUserById(userId);
+    if (!targetUser) {
+      return { status: 404, body: { error: "Usuario nao encontrado" } };
+    }
+
+    if (targetUser.role === "admin" && targetUser.active) {
+      const users = await listUsers();
+      const activeAdmins = users.filter((item) => item.role === "admin" && item.active).length;
+      if (activeAdmins <= 1) {
+        return { status: 400, body: { error: "Nao e permitido excluir o ultimo administrador ativo" } };
+      }
+    }
+
+    const deleted = await deleteUserById(userId);
+    if (!deleted) {
+      return { status: 404, body: { error: "Usuario nao encontrado" } };
+    }
+
+    return { status: 200, body: { message: "Usuario excluido com sucesso" } };
+  };
+
   if (req.method === "GET" && !action) {
     const users = await listUsers();
     return { status: 200, body: { users } };
@@ -344,7 +518,7 @@ async function handleUsers(req: Request, action: string, subActions: string[]): 
 
   if (req.method === "POST" && action === "local") {
     const body = parseBody(req.body);
-    const email = String(body.email || "").trim().toLowerCase();
+    const email = normalizeEmail(body.email);
     const password = String(body.password || "");
     const fullName = String(body.fullName || "").trim();
     const role = parseRole(body.role);
@@ -353,8 +527,17 @@ async function handleUsers(req: Request, action: string, subActions: string[]): 
       return { status: 400, body: { error: "Campos obrigatorios: fullName, email, password e role" } };
     }
 
-    if (password.length < 8) {
-      return { status: 400, body: { error: "A senha deve ter no minimo 8 caracteres" } };
+    if (!isValidEmail(email)) {
+      return { status: 400, body: { error: "E-mail invalido" } };
+    }
+
+    if (!isStrongPassword(password)) {
+      return {
+        status: 400,
+        body: {
+          error: "A senha deve ter no minimo 12 caracteres e incluir letra maiuscula, minuscula, numero e simbolo.",
+        },
+      };
     }
 
     try {
@@ -373,6 +556,15 @@ async function handleUsers(req: Request, action: string, subActions: string[]): 
 
       throw error;
     }
+  }
+
+  if (req.method === "POST" && subActions[0] === "delete") {
+    const userId = parseEventId(action);
+    if (!userId) {
+      return { status: 400, body: { error: "ID de usuario invalido" } };
+    }
+
+    return performUserDeletion(userId);
   }
 
   if (req.method === "PATCH") {
@@ -419,9 +611,69 @@ async function handleUsers(req: Request, action: string, subActions: string[]): 
 
       return { status: 200, body: { user: updatedUser } };
     }
+
+    if (patchTarget === "password") {
+      const password = String(body.password || "");
+      if (!password) {
+        return { status: 400, body: { error: "password e obrigatoria" } };
+      }
+
+      if (!isStrongPassword(password)) {
+        return {
+          status: 400,
+          body: {
+            error: "A senha deve ter no minimo 12 caracteres e incluir letra maiuscula, minuscula, numero e simbolo.",
+          },
+        };
+      }
+
+      try {
+        const updatedUser = await updateLocalUserPassword(userId, password);
+        if (!updatedUser) {
+          return { status: 404, body: { error: "Usuario nao encontrado" } };
+        }
+
+        return { status: 200, body: { user: updatedUser } };
+      } catch (error) {
+        if (error instanceof Error && error.message === "password_change_only_local") {
+          return { status: 400, body: { error: "Somente usuarios locais podem ter senha alterada" } };
+        }
+
+        throw error;
+      }
+    }
+  }
+
+  if (req.method === "DELETE") {
+    const userId = parseEventId(action);
+    if (!userId) {
+      return { status: 400, body: { error: "ID de usuario invalido" } };
+    }
+
+    return performUserDeletion(userId);
   }
 
   return { status: 404, body: { error: "Endpoint de usuarios nao encontrado" } };
+}
+
+async function handleLogs(req: Request, action: string): Promise<Response> {
+  const user = await extractUserFromHeader(req);
+  if (!user) {
+    return { status: 401, body: { error: "Nao autorizado" } };
+  }
+
+  if (!hasAdminPermission(user)) {
+    return { status: 403, body: { error: "Apenas administradores podem visualizar logs" } };
+  }
+
+  if (req.method === "GET" && action === "events") {
+    const rawLimit = Number(req.query?.limit || 200);
+    const limit = Number.isInteger(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 500) : 200;
+    const logs = await listEventAuditLogs(limit);
+    return { status: 200, body: { logs } };
+  }
+
+  return { status: 404, body: { error: "Endpoint de logs nao encontrado" } };
 }
 
 async function handleSettings(req: Request, action: string): Promise<Response> {
@@ -574,17 +826,34 @@ async function handleEvents(req: Request, action: string): Promise<Response> {
   if (req.method === "POST" && action === "create") {
     const body = parseBody(req.body);
     const title = String(body.title || "").trim();
-    const eventType = String(body.event_type || "").trim();
+    const eventType = normalizeEventType(body.event_type);
     const startDate = normalizeDateString(body.start_date);
     const endDate = normalizeDateString(body.end_date);
     const allDay = Boolean(body.all_day);
     const startTime = allDay ? null : normalizeTimeString(body.start_time);
     const endTime = allDay ? null : normalizeTimeString(body.end_time);
     const description = body.description ? String(body.description).trim() : null;
-    const involvedEmails = normalizeInvolvedEmails(body.involved_emails);
+    const { normalized: involvedEmails, invalidEmails } = parseAndValidateInvolvedEmails(body.involved_emails);
 
     if (!title || !eventType || !startDate || !endDate) {
       return { status: 400, body: { error: "Campos obrigatorios: title, event_type, start_date e end_date" } };
+    }
+
+    if (title.length > TITLE_MAX_LENGTH) {
+      return { status: 400, body: { error: `title excede ${TITLE_MAX_LENGTH} caracteres` } };
+    }
+
+    if (description && description.length > DESCRIPTION_MAX_LENGTH) {
+      return { status: 400, body: { error: `description excede ${DESCRIPTION_MAX_LENGTH} caracteres` } };
+    }
+
+    if (invalidEmails.length) {
+      return {
+        status: 400,
+        body: {
+          error: `E-mail(s) invalido(s) em "Setores envolvidos": ${invalidEmails.join(", ")}`,
+        },
+      };
     }
 
     if (!isValidDateRange(startDate, endDate)) {
@@ -625,6 +894,12 @@ async function handleEvents(req: Request, action: string): Promise<Response> {
     });
 
     if (!canDirectPublish) {
+      await registerEventAudit(
+        user,
+        "evento_criado_pendente",
+        { id: createdEvent.id, title: createdEvent.title },
+        `Tipo: ${createdEvent.event_type}. Periodo: ${createdEvent.start_date} a ${createdEvent.end_date}.`,
+      );
       return { status: 201, body: { event: createdEvent } };
     }
 
@@ -645,6 +920,13 @@ async function handleEvents(req: Request, action: string): Promise<Response> {
       if (updated) {
         createdEvent = updated;
       }
+
+      await registerEventAudit(
+        user,
+        "evento_criado_publicado_direto",
+        { id: createdEvent.id, title: createdEvent.title },
+        `Tipo: ${createdEvent.event_type}. Publicado no Google Calendar.`,
+      );
 
       return { status: 201, body: { event: createdEvent } };
     } catch (error) {
@@ -698,18 +980,35 @@ async function handleEvents(req: Request, action: string): Promise<Response> {
       if (!value) {
         return { status: 400, body: { error: "title nao pode ser vazio" } };
       }
+      if (value.length > TITLE_MAX_LENGTH) {
+        return { status: 400, body: { error: `title excede ${TITLE_MAX_LENGTH} caracteres` } };
+      }
       updates.title = value;
     }
     if (body.description !== undefined) {
-      updates.description = body.description ? String(body.description) : null;
+      const value = body.description ? String(body.description).trim() : null;
+      if (value && value.length > DESCRIPTION_MAX_LENGTH) {
+        return { status: 400, body: { error: `description excede ${DESCRIPTION_MAX_LENGTH} caracteres` } };
+      }
+      updates.description = value;
     }
     if (body.involved_emails !== undefined) {
-      updates.involved_emails = normalizeInvolvedEmails(body.involved_emails);
+      const { normalized, invalidEmails } = parseAndValidateInvolvedEmails(body.involved_emails);
+      if (invalidEmails.length) {
+        return {
+          status: 400,
+          body: {
+            error: `E-mail(s) invalido(s) em "Setores envolvidos": ${invalidEmails.join(", ")}`,
+          },
+        };
+      }
+
+      updates.involved_emails = normalized;
     }
     if (body.event_type !== undefined) {
-      const value = String(body.event_type || "").trim();
+      const value = normalizeEventType(body.event_type);
       if (!value) {
-        return { status: 400, body: { error: "event_type nao pode ser vazio" } };
+        return { status: 400, body: { error: "event_type invalido" } };
       }
       updates.event_type = value;
     }
@@ -792,6 +1091,13 @@ async function handleEvents(req: Request, action: string): Promise<Response> {
     }
 
     const updated = await eventService.updateEvent(eventId, updates);
+    const changedFields = Object.keys(updates).join(", ") || "sem alteracoes detectadas";
+    await registerEventAudit(
+      user,
+      "evento_atualizado",
+      { id: updated?.id ?? currentEvent.id, title: updated?.title ?? currentEvent.title },
+      `Campos alterados: ${changedFields}.`,
+    );
     return { status: 200, body: { event: updated } };
   }
 
@@ -842,6 +1148,12 @@ async function handleEvents(req: Request, action: string): Promise<Response> {
     }
 
     await eventService.deleteEvent(eventId);
+    await registerEventAudit(
+      user,
+      "evento_excluido",
+      { id: event.id, title: event.title },
+      `Status anterior: ${event.status}.`,
+    );
     return { status: 200, body: { message: "Evento excluido com sucesso" } };
   }
 
@@ -868,6 +1180,12 @@ async function handleEvents(req: Request, action: string): Promise<Response> {
 
     if (action === "reject") {
       const rejectedEvent = await eventService.rejectEvent(eventId, user.id);
+      await registerEventAudit(
+        user,
+        "evento_rejeitado",
+        { id: rejectedEvent?.id ?? event.id, title: rejectedEvent?.title ?? event.title },
+        "Solicitacao rejeitada pela supervisao/admin.",
+      );
       return { status: 200, body: { event: rejectedEvent } };
     }
 
@@ -887,6 +1205,13 @@ async function handleEvents(req: Request, action: string): Promise<Response> {
         approved_at: getNowForMysql(),
         google_calendar_event_id: googleEventId,
       });
+
+      await registerEventAudit(
+        user,
+        "evento_aprovado",
+        { id: approvedEvent?.id ?? event.id, title: approvedEvent?.title ?? event.title },
+        "Solicitacao aprovada e publicada no Google Calendar.",
+      );
 
       return { status: 200, body: { event: approvedEvent } };
     } catch (error) {

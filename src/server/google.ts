@@ -11,6 +11,8 @@ interface AccessTokenCache {
   expiresAt: number;
 }
 
+type GoogleCalendarAuthMode = "service_account" | "oauth_user";
+
 let cachedAccessToken: AccessTokenCache | null = null;
 
 const base64UrlEncode = (value: string): string => {
@@ -19,6 +21,40 @@ const base64UrlEncode = (value: string): string => {
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/g, "");
+};
+
+const getGoogleCalendarAuthMode = (): GoogleCalendarAuthMode => {
+  const mode = (process.env.GOOGLE_CALENDAR_AUTH_MODE || "service_account").trim().toLowerCase();
+  if (mode === "oauth_user") {
+    return "oauth_user";
+  }
+
+  return "service_account";
+};
+
+const parseCsvToSet = (value: string): Set<string> => {
+  return new Set(
+    value
+      .split(",")
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean),
+  );
+};
+
+const assertGoogleEmailAllowed = (email: string): void => {
+  const normalizedEmail = email.trim().toLowerCase();
+  const atIndex = normalizedEmail.lastIndexOf("@");
+  const domain = atIndex >= 0 ? normalizedEmail.slice(atIndex + 1) : "";
+
+  const allowedDomains = parseCsvToSet(process.env.GOOGLE_ALLOWED_EMAIL_DOMAINS || "");
+  const allowedEmails = parseCsvToSet(process.env.GOOGLE_ALLOWED_EMAILS || "");
+
+  const isEmailAllowed = allowedEmails.size === 0 || allowedEmails.has(normalizedEmail);
+  const isDomainAllowed = allowedDomains.size === 0 || (domain && allowedDomains.has(domain));
+
+  if (!isEmailAllowed || !isDomainAllowed) {
+    throw new Error("google_email_not_allowed");
+  }
 };
 
 const getServiceAccountConfig = () => {
@@ -37,8 +73,30 @@ const getServiceAccountConfig = () => {
   };
 };
 
+const getOAuthUserConfig = () => {
+  const clientId = (process.env.GOOGLE_CLIENT_ID || "").trim();
+  const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || "").trim();
+  const refreshToken = (process.env.GOOGLE_CALENDAR_USER_REFRESH_TOKEN || "").trim();
+  const accountEmail = (process.env.GOOGLE_CALENDAR_ACCOUNT_EMAIL || "").trim().toLowerCase();
+
+  if (!clientId || !clientSecret || !refreshToken) {
+    throw new Error("google_calendar_oauth_user_not_configured");
+  }
+
+  return {
+    clientId,
+    clientSecret,
+    refreshToken,
+    accountEmail,
+  };
+};
+
 const getTokenCacheKey = (serviceAccountEmail: string, delegatedUser: string): string => {
   return `${serviceAccountEmail}|${delegatedUser || "-"}`;
+};
+
+const getOauthUserCacheKey = (clientId: string, accountEmail: string): string => {
+  return `oauth_user|${clientId}|${accountEmail || "-"}`;
 };
 
 const parseGoogleSendUpdatesMode = (): "all" | "externalOnly" | "none" => {
@@ -135,6 +193,55 @@ const getServiceAccessToken = async (): Promise<string> => {
   return payload.access_token;
 };
 
+const getOAuthUserAccessToken = async (): Promise<string> => {
+  const { clientId, clientSecret, refreshToken, accountEmail } = getOAuthUserConfig();
+  const cacheKey = getOauthUserCacheKey(clientId, accountEmail);
+
+  if (cachedAccessToken && cachedAccessToken.cacheKey === cacheKey && Date.now() < cachedAccessToken.expiresAt - 60_000) {
+    return cachedAccessToken.token;
+  }
+
+  const response = await fetch(GOOGLE_OAUTH_TOKEN_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: "refresh_token",
+    }).toString(),
+  });
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(`google_calendar_token_error:${response.status}:${details}`);
+  }
+
+  const payload = (await response.json()) as { access_token?: string; expires_in?: number };
+  if (!payload.access_token) {
+    throw new Error("google_calendar_token_missing");
+  }
+
+  cachedAccessToken = {
+    cacheKey,
+    token: payload.access_token,
+    expiresAt: Date.now() + (payload.expires_in || 3600) * 1000,
+  };
+
+  return payload.access_token;
+};
+
+const getGoogleAccessToken = async (): Promise<string> => {
+  const mode = getGoogleCalendarAuthMode();
+  if (mode === "oauth_user") {
+    return getOAuthUserAccessToken();
+  }
+
+  return getServiceAccessToken();
+};
+
 const normalizeGoogleApiError = async (response: globalThis.Response): Promise<string> => {
   try {
     const payload = (await response.json()) as {
@@ -157,7 +264,7 @@ const calendarRequest = async <T>(
   path: string,
   body?: unknown,
 ): Promise<T> => {
-  const token = await getServiceAccessToken();
+  const token = await getGoogleAccessToken();
   const url = `${GOOGLE_CALENDAR_API_BASE}/calendars/${encodeURIComponent(calendarId)}${path}`;
 
   const response = await fetch(url, {
@@ -250,6 +357,7 @@ interface LocalCalendarEventPayload {
   title: string;
   description: string | null;
   involved_emails: string | null;
+  event_type?: string | null;
   start_date: string | Date;
   end_date: string | Date;
   start_time: string | null;
@@ -277,14 +385,57 @@ const parseGoogleAttendees = (involvedEmails: string | null): Array<{ email: str
   return Array.from(uniqueEmails).map((email) => ({ email }));
 };
 
+const EVENT_TYPE_EVENTO = "Evento";
+const EVENT_TYPE_ACAO_PONTUAL = "A\u00e7\u00e3o Pontual";
+const EVENT_TYPE_PROJETO_INSTITUCIONAL = "Projeto Institucional";
+const EVENT_TYPE_PROJETO_PEDAGOGICO = "Projeto Pedag\u00f3gico";
+const EVENT_TYPE_EXPEDICAO_PEDAGOGICA = "Expedi\u00e7\u00e3o Pedag\u00f3gica";
+const EVENT_TYPE_FORMACAO = "Forma\u00e7\u00e3o";
+const EVENT_TYPE_FESTA = "Festa";
+
+const GOOGLE_COLOR_BY_EVENT_TYPE: Record<string, string> = {
+  [EVENT_TYPE_EVENTO]: "8",
+  [EVENT_TYPE_ACAO_PONTUAL]: "5",
+  [EVENT_TYPE_PROJETO_INSTITUCIONAL]: "10",
+  [EVENT_TYPE_PROJETO_PEDAGOGICO]: "1",
+  [EVENT_TYPE_EXPEDICAO_PEDAGOGICA]: "9",
+  [EVENT_TYPE_FORMACAO]: "3",
+  [EVENT_TYPE_FESTA]: "11",
+};
+
+const EVENT_TYPE_LABEL_BY_GOOGLE_COLOR: Record<string, string> = {
+  "8": EVENT_TYPE_EVENTO,
+  "5": EVENT_TYPE_ACAO_PONTUAL,
+  "10": EVENT_TYPE_PROJETO_INSTITUCIONAL,
+  "1": EVENT_TYPE_PROJETO_PEDAGOGICO,
+  "9": EVENT_TYPE_EXPEDICAO_PEDAGOGICA,
+  "3": EVENT_TYPE_FORMACAO,
+  "11": EVENT_TYPE_FESTA,
+};
+
+const getGoogleColorIdForEventType = (value: string | null | undefined): string => {
+  const eventType = String(value || "").trim();
+  return GOOGLE_COLOR_BY_EVENT_TYPE[eventType] || "7";
+};
+
+const getEventTypeLabelFromGoogleColorId = (colorId: string | undefined): string | null => {
+  if (!colorId) {
+    return null;
+  }
+
+  return EVENT_TYPE_LABEL_BY_GOOGLE_COLOR[colorId] || null;
+};
+
 const toGoogleEventPayload = (event: LocalCalendarEventPayload, timezone: string) => {
   const normalizedStartDate = normalizeDateOnly(event.start_date, "start_date");
   const normalizedEndDate = normalizeDateOnly(event.end_date, "end_date");
   const attendees = parseGoogleAttendees(event.involved_emails);
+  const colorId = getGoogleColorIdForEventType(event.event_type);
 
   const basePayload: Record<string, unknown> = {
     summary: event.title,
     description: event.description || "",
+    colorId,
   };
 
   if (attendees.length) {
@@ -405,11 +556,17 @@ interface GoogleCalendarListEvent {
   id: string;
   summary?: string;
   description?: string;
+  colorId?: string;
   status?: string;
   htmlLink?: string;
   updated?: string;
   start?: { date?: string; dateTime?: string };
   end?: { date?: string; dateTime?: string };
+  extendedProperties?: {
+    private?: {
+      localEventId?: string;
+    };
+  };
 }
 
 interface GoogleCalendarListResponse {
@@ -419,6 +576,7 @@ interface GoogleCalendarListResponse {
 export interface MirroredGoogleEvent {
   google_event_id: string;
   title: string;
+  event_type: string | null;
   description: string | null;
   start_date: string;
   end_date: string;
@@ -436,6 +594,7 @@ interface LocalEventByGoogleId {
   id: number;
   google_calendar_event_id: string;
   status: "pending" | "approved" | "rejected";
+  event_type: string;
 }
 
 const extractDateFromDateTime = (value: string): string => {
@@ -449,6 +608,7 @@ const extractTimeFromDateTime = (value: string): string => {
 const mapGoogleEvent = (
   event: GoogleCalendarListEvent,
   localEventMap: Map<string, LocalEventByGoogleId>,
+  localEventIdMap: Map<number, LocalEventByGoogleId>,
 ): MirroredGoogleEvent | null => {
   if (!event.id || !event.start || !event.end) {
     return null;
@@ -471,11 +631,28 @@ const mapGoogleEvent = (
     return null;
   }
 
-  const linkedLocalEvent = localEventMap.get(event.id) || null;
+  const linkedByGoogleId = localEventMap.get(event.id) || null;
+  const linkedByExtendedId = (() => {
+    const rawId = event.extendedProperties?.private?.localEventId;
+    if (!rawId) {
+      return null;
+    }
+
+    const parsedId = Number(rawId);
+    if (!Number.isInteger(parsedId) || parsedId <= 0) {
+      return null;
+    }
+
+    return localEventIdMap.get(parsedId) || null;
+  })();
+
+  const linkedLocalEvent = linkedByGoogleId || linkedByExtendedId;
+  const fallbackTypeFromColor = getEventTypeLabelFromGoogleColorId(event.colorId);
 
   return {
     google_event_id: event.id,
     title: event.summary || "(Sem titulo)",
+    event_type: linkedLocalEvent?.event_type ?? fallbackTypeFromColor,
     description: event.description || null,
     start_date: startDate,
     end_date: endDate,
@@ -517,9 +694,10 @@ export const listGoogleCalendarEvents = async (
   const localEventMap = new Map<string, LocalEventByGoogleId>(
     options.localEvents.map((event) => [event.google_calendar_event_id, event]),
   );
+  const localEventIdMap = new Map<number, LocalEventByGoogleId>(options.localEvents.map((event) => [event.id, event]));
 
   return (response.items || [])
-    .map((event) => mapGoogleEvent(event, localEventMap))
+    .map((event) => mapGoogleEvent(event, localEventMap, localEventIdMap))
     .filter((event): event is MirroredGoogleEvent => Boolean(event));
 };
 
@@ -565,6 +743,8 @@ export const verifyGoogleIdToken = async (idToken: string): Promise<VerifiedGoog
   if (!configuredClientIds.includes(payload.aud)) {
     throw new Error("google_token_audience_mismatch");
   }
+
+  assertGoogleEmailAllowed(payload.email);
 
   return {
     googleId: payload.sub,

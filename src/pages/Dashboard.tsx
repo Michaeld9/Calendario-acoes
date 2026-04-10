@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { eventsApi } from "@/integrations/api";
+import { getEventTypeBadgeClass } from "@/lib/eventTypeColors";
 
 type EventStatus = "pending" | "approved" | "rejected";
 type UserRole = "admin" | "supervisor" | "coordenador";
@@ -234,9 +235,12 @@ const Dashboard = () => {
                         )}
 
                         <div className="space-y-1 text-sm text-muted-foreground">
-                          <p>
-                            <strong className="text-foreground">Tipo:</strong> {event.event_type}
-                          </p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <strong className="text-foreground">Tipo:</strong>
+                            <Badge className={getEventTypeBadgeClass(event.event_type)}>
+                              {event.event_type || "Nao informado"}
+                            </Badge>
+                          </div>
                           <p>
                             <strong className="text-foreground">Data:</strong>{" "}
                             {format(new Date(event.start_date), "dd/MM/yyyy", { locale: ptBR })}

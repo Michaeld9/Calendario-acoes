@@ -93,3 +93,27 @@ export const updateUserActive = async (userId: number, active: boolean): Promise
   await db.execute("UPDATE users SET active = ? WHERE id = ?", [active ? 1 : 0, userId]);
   return getManagedUserById(userId);
 };
+
+export const updateLocalUserPassword = async (userId: number, password: string): Promise<ManagedUser | null> => {
+  const current = await db.query<{ auth_type: UserAuthType }>(
+    "SELECT auth_type FROM users WHERE id = ? LIMIT 1",
+    [userId],
+  );
+
+  if (!current.length) {
+    return null;
+  }
+
+  if (current[0].auth_type !== "local") {
+    throw new Error("password_change_only_local");
+  }
+
+  const passwordHash = await hashPassword(password);
+  await db.execute("UPDATE users SET password_hash = ? WHERE id = ?", [passwordHash, userId]);
+  return getManagedUserById(userId);
+};
+
+export const deleteUserById = async (userId: number): Promise<boolean> => {
+  const result = await db.execute("DELETE FROM users WHERE id = ?", [userId]);
+  return result.affectedRows > 0;
+};

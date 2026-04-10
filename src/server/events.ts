@@ -123,11 +123,12 @@ interface EventByGoogleId {
   id: number;
   google_calendar_event_id: string;
   status: "pending" | "approved" | "rejected";
+  event_type: string;
 }
 
 export const getSyncedLocalEvents = async (): Promise<EventByGoogleId[]> => {
   return db.query<EventByGoogleId>(
-    `SELECT id, google_calendar_event_id, status
+    `SELECT id, google_calendar_event_id, status, event_type
      FROM events
      WHERE google_calendar_event_id IS NOT NULL`,
   );
@@ -140,7 +141,7 @@ export const getLocalEventsByGoogleIds = async (googleIds: string[]): Promise<Ev
 
   const placeholders = googleIds.map(() => "?").join(", ");
   return db.query<EventByGoogleId>(
-    `SELECT id, google_calendar_event_id, status
+    `SELECT id, google_calendar_event_id, status, event_type
      FROM events
      WHERE google_calendar_event_id IN (${placeholders})`,
     googleIds,

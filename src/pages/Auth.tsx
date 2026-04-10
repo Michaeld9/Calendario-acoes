@@ -232,10 +232,10 @@ const Auth = () => {
           <div className="rounded-3xl border border-white/60 bg-white/75 p-8 shadow-xl backdrop-blur">
             <div className="mb-8 inline-flex items-center gap-3 rounded-full bg-slate-900 px-4 py-2 text-sm text-white">
               <Calendar className="h-4 w-4" />
-              Plataforma de Operações de Agenda
+              Calendário de Ações
             </div>
 
-            <h1 className="text-4xl font-semibold tracking-tight text-slate-900">Syncro Event Desk</h1>
+            <h1 className="text-4xl font-semibold tracking-tight text-slate-900">Sincronização de Eventos</h1>
             <p className="mt-4 text-base leading-relaxed text-slate-600">
               Aprovação em camadas, integração com Google Calendar e controle de escopo por tier.
             </p>

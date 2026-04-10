@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, RefreshCw, Save, ShieldAlert, Users2 } from "lucide-react";
+import { KeyRound, Plus, RefreshCw, Save, ShieldAlert, Trash2, Users2 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -46,6 +47,10 @@ const AdminUsers = () => {
     role: "coordenador" as UserRole,
   });
   const [sessionUser, setSessionUser] = useState<{ id: number; role: UserRole } | null>(null);
+  const [passwordDialogUser, setPasswordDialogUser] = useState<ManagedUser | null>(null);
+  const [passwordValue, setPasswordValue] = useState("");
+  const [updatingPassword, setUpdatingPassword] = useState(false);
+  const [deletingUserId, setDeletingUserId] = useState<number | null>(null);
 
   const canAccess = sessionUser?.role === "admin";
 
@@ -165,6 +170,74 @@ const AdminUsers = () => {
         title: "Falha ao atualizar status",
         description: apiError.response?.data?.error || apiError.message || "Não foi possível atualizar o status.",
       });
+    }
+  };
+
+  const closePasswordDialog = () => {
+    setPasswordDialogUser(null);
+    setPasswordValue("");
+    setUpdatingPassword(false);
+  };
+
+  const handleUpdateLocalPassword = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!passwordDialogUser) {
+      return;
+    }
+
+    setUpdatingPassword(true);
+    try {
+      await usersApi.updateLocalUserPassword(passwordDialogUser.id, passwordValue);
+      toast({
+        title: "Senha atualizada",
+        description: `Senha alterada para ${passwordDialogUser.full_name || passwordDialogUser.email}.`,
+      });
+      closePasswordDialog();
+    } catch (error: unknown) {
+      const apiError = error as { response?: { data?: { error?: string } }; message?: string };
+      toast({
+        variant: "destructive",
+        title: "Falha ao alterar senha",
+        description: apiError.response?.data?.error || apiError.message || "Nao foi possivel atualizar a senha.",
+      });
+      setUpdatingPassword(false);
+    }
+  };
+
+  const handleDeleteUser = async (managedUser: ManagedUser) => {
+    if (managedUser.id === sessionUser?.id) {
+      toast({
+        variant: "destructive",
+        title: "Operacao bloqueada",
+        description: "Nao e permitido excluir seu proprio usuario.",
+      });
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Excluir o usuario ${managedUser.full_name || managedUser.email}? Esta acao e permanente e pode remover eventos relacionados.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingUserId(managedUser.id);
+    try {
+      await usersApi.deleteUser(managedUser.id);
+      setUsers((current) => current.filter((user) => user.id !== managedUser.id));
+      toast({
+        title: "Usuario excluido",
+        description: `${managedUser.full_name || managedUser.email} foi removido.`,
+      });
+    } catch (error: unknown) {
+      const apiError = error as { response?: { data?: { error?: string } }; message?: string };
+      toast({
+        variant: "destructive",
+        title: "Falha ao excluir usuario",
+        description: apiError.response?.data?.error || apiError.message || "Nao foi possivel excluir o usuario.",
+      });
+    } finally {
+      setDeletingUserId(null);
     }
   };
 
@@ -290,11 +363,14 @@ const AdminUsers = () => {
                 <Input
                   id="new_password"
                   type="password"
-                  minLength={8}
+                  minLength={12}
                   value={newUser.password}
                   onChange={(event) => setNewUser((current) => ({ ...current, password: event.target.value }))}
                   required
                 />
+                <p className="text-xs text-muted-foreground">
+                  Minimo 12 caracteres com maiuscula, minuscula, numero e simbolo.
+                </p>
               </div>
               <div className="space-y-1">
                 <Label>Tier inicial</Label>
@@ -346,60 +422,136 @@ const AdminUsers = () => {
             )}
 
             {!loading &&
-              users.map((user) => (
-                <article
-                  key={user.id}
-                  className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-                >
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="min-w-0">
-                      <p className="font-semibold text-slate-900">{user.full_name || "Sem nome"}</p>
-                      <p className="text-sm text-slate-600">{user.email}</p>
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <Badge variant="outline">
-                          {user.auth_type === "google" ? "Google" : "Local"}
-                        </Badge>
-                        {user.active ? (
-                          <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">Ativo</Badge>
-                        ) : (
-                          <Badge className="bg-rose-100 text-rose-800 hover:bg-rose-100">Inativo</Badge>
-                        )}
-                        {user.google_id && (
-                          <Badge variant="outline" className="font-mono text-[10px]">
-                            {user.google_id.slice(0, 18)}...
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
+              users.map((user) => {
+                const canChangePassword = user.auth_type === "local";
+                const isSelf = user.id === sessionUser?.id;
+                const isDeleting = deletingUserId === user.id;
 
-                    <div className="flex flex-wrap items-center gap-3">
-                      <div className="min-w-[190px]">
-                        <Label className="text-xs text-muted-foreground">Tier</Label>
-                        <Select value={user.role} onValueChange={(value: UserRole) => handleRoleChange(user.id, value)}>
-                          <SelectTrigger>
-                            <SelectValue>{roleLabel[user.role]}</SelectValue>
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="coordenador">Coordenação</SelectItem>
-                            <SelectItem value="supervisor">Supervisor</SelectItem>
-                            <SelectItem value="admin">Administrador</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
+                return (
+                  <article key={user.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px_220px] xl:items-center">
+                      <section className="min-w-0">
+                        <p className="truncate text-base font-semibold text-slate-900">{user.full_name || "Sem nome"}</p>
+                        <p className="truncate text-sm text-slate-600">{user.email}</p>
 
-                      <div className="flex items-center gap-2">
-                        <Switch
-                          checked={user.active}
-                          onCheckedChange={(checked) => handleActiveChange(user.id, checked)}
-                        />
-                        <span className="text-sm">{user.active ? "Ativo" : "Inativo"}</span>
-                      </div>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <Badge variant="outline">{user.auth_type === "google" ? "Google" : "Local"}</Badge>
+                          <Badge variant="outline">{roleLabel[user.role]}</Badge>
+                          {user.active ? (
+                            <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">Ativo</Badge>
+                          ) : (
+                            <Badge className="bg-rose-100 text-rose-800 hover:bg-rose-100">Inativo</Badge>
+                          )}
+                          {user.google_id && (
+                            <Badge variant="outline" className="font-mono text-[10px]">
+                              {user.google_id.slice(0, 18)}...
+                            </Badge>
+                          )}
+                        </div>
+                      </section>
+
+                      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                        <div className="space-y-1">
+                          <Label className="text-xs uppercase tracking-wide text-muted-foreground">Tier</Label>
+                          <Select value={user.role} onValueChange={(value: UserRole) => handleRoleChange(user.id, value)}>
+                            <SelectTrigger className="h-10 bg-white">
+                              <SelectValue>{roleLabel[user.role]}</SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="coordenador">Coordenação</SelectItem>
+                              <SelectItem value="supervisor">Supervisor</SelectItem>
+                              <SelectItem value="admin">Administrador</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-xs uppercase tracking-wide text-muted-foreground">Status</Label>
+                          <div className="flex h-10 items-center justify-between rounded-md border border-slate-200 px-3">
+                            <span className="text-sm text-slate-700">{user.active ? "Conta ativa" : "Conta inativa"}</span>
+                            <Switch checked={user.active} onCheckedChange={(checked) => handleActiveChange(user.id, checked)} />
+                          </div>
+                        </div>
+                      </section>
+
+                      <section className="flex flex-col gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="w-full justify-start"
+                          disabled={!canChangePassword}
+                          onClick={() => {
+                            setPasswordDialogUser(user);
+                            setPasswordValue("");
+                          }}
+                        >
+                          <KeyRound className="mr-1 h-4 w-4" />
+                          {canChangePassword ? "Alterar senha" : "Senha indisponivel"}
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          className="w-full justify-start"
+                          disabled={isDeleting || isSelf}
+                          onClick={() => handleDeleteUser(user)}
+                        >
+                          <Trash2 className="mr-1 h-4 w-4" />
+                          {isDeleting ? "Excluindo..." : "Excluir usuario"}
+                        </Button>
+                      </section>
                     </div>
-                  </div>
-                </article>
-              ))}
+                  </article>
+                );
+              })}
           </CardContent>
         </Card>
+
+        <Dialog
+          open={Boolean(passwordDialogUser)}
+          onOpenChange={(open) => {
+            if (!open) {
+              closePasswordDialog();
+            }
+          }}
+        >
+          <DialogContent className="max-w-md border-slate-200/80">
+            <DialogHeader>
+              <DialogTitle>Alterar senha de usuario local</DialogTitle>
+              <DialogDescription>
+                {passwordDialogUser
+                  ? `Atualize a senha de ${passwordDialogUser.full_name || passwordDialogUser.email}.`
+                  : "Defina uma nova senha."}
+              </DialogDescription>
+            </DialogHeader>
+
+            <form onSubmit={handleUpdateLocalPassword} className="space-y-3">
+              <div className="space-y-1">
+                <Label htmlFor="reset_password">Nova senha</Label>
+                <Input
+                  id="reset_password"
+                  type="password"
+                  minLength={12}
+                  value={passwordValue}
+                  onChange={(event) => setPasswordValue(event.target.value)}
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  Minimo 12 caracteres com maiuscula, minuscula, numero e simbolo.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2">
+                <Button type="button" variant="outline" onClick={closePasswordDialog} disabled={updatingPassword}>
+                  Cancelar
+                </Button>
+                <Button type="submit" disabled={updatingPassword || !passwordValue.trim()}>
+                  {updatingPassword ? "Salvando..." : "Salvar nova senha"}
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
 
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
           <p className="flex items-center gap-2 font-medium">
@@ -417,3 +569,4 @@ const AdminUsers = () => {
 };
 
 export default AdminUsers;
+
