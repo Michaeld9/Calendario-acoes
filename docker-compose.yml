@@ -6,11 +6,11 @@ services:
     environment:
       MYSQL_DATABASE: event_calendar
       MYSQL_USER: app_user
-      MYSQL_PASSWORD: Blaster!@
-      MYSQL_ROOT_PASSWORD: Blaster!@
+      MYSQL_PASSWORD: SUASENHAAQUI
+      MYSQL_ROOT_PASSWORD: SUASENHAAQUI
       TZ: America/Fortaleza
     ports:
-      - "3306:3306"
+      - "PORTA:PORTA"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
