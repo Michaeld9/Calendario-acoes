@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { getEventTypeBadgeClass, getEventTypeDayChipClass } from "@/lib/eventTypeColors";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -77,11 +78,12 @@ const CalendarView = () => {
 
   useEffect(() => {
     const today = new Date();
-    const start = new Date(today.getFullYear(), today.getMonth(), 1);
-    const end = new Date(today.getFullYear(), today.getMonth() + 3, 0);
-    const startKey = start.toISOString().slice(0, 10);
-    const endKey = end.toISOString().slice(0, 10);
-    const todayKey = today.toISOString().slice(0, 10);
+    const currentYear = today.getFullYear();
+    const start = new Date(currentYear, 0, 1);
+    const end = new Date(currentYear, 11, 31);
+    const startKey = format(start, "yyyy-MM-dd");
+    const endKey = format(end, "yyyy-MM-dd");
+    const todayKey = format(today, "yyyy-MM-dd");
 
     setFromDate(startKey);
     setToDate(endKey);
@@ -267,12 +269,34 @@ const CalendarView = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-              <Input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} />
-              <Input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} />
-              <Button variant="outline" onClick={fetchMirror} disabled={loading || !fromDate || !toDate}>
-                Aplicar intervalo
-              </Button>
+            <div className="rounded-xl border border-slate-200 bg-white/90 p-3">
+              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
+                <div className="space-y-1">
+                  <Label htmlFor="mirror_from_date">Data inicial</Label>
+                  <Input
+                    id="mirror_from_date"
+                    type="date"
+                    value={fromDate}
+                    onChange={(event) => setFromDate(event.target.value)}
+                    max={toDate || undefined}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="mirror_to_date">Data final</Label>
+                  <Input
+                    id="mirror_to_date"
+                    type="date"
+                    value={toDate}
+                    onChange={(event) => setToDate(event.target.value)}
+                    min={fromDate || undefined}
+                  />
+                </div>
+                <div className="flex items-end">
+                  <Button className="w-full md:w-auto" variant="outline" onClick={fetchMirror} disabled={loading || !fromDate || !toDate}>
+                    Aplicar intervalo
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
         </CardHeader>

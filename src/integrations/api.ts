@@ -94,8 +94,8 @@ export const settingsApi = {
 };
 
 export const logsApi = {
-  getEventLogs: (limit = 200) =>
-    api.get('/logs/events', { params: { limit } }),
+  getEventLogs: (params?: { limit?: number; action?: string; fromDate?: string; toDate?: string }) =>
+    api.get('/logs/events', { params }),
 };
 
 export default api;

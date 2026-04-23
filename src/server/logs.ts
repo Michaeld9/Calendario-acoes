@@ -12,6 +12,13 @@ export interface EventAuditLog {
   created_at: string;
 }
 
+interface ListEventAuditLogsOptions {
+  limit?: number;
+  action?: string | null;
+  fromDate?: string | null;
+  toDate?: string | null;
+}
+
 interface CreateEventAuditLogInput {
   action: string;
   eventId?: number | null;
@@ -70,8 +77,27 @@ export const createEventAuditLog = async (input: CreateEventAuditLogInput): Prom
   );
 };
 
-export const listEventAuditLogs = async (limit = 200): Promise<EventAuditLog[]> => {
-  const safeLimit = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 500) : 200;
+export const listEventAuditLogs = async (options: ListEventAuditLogsOptions = {}): Promise<EventAuditLog[]> => {
+  const safeLimit = Number.isInteger(options.limit) && Number(options.limit) > 0 ? Math.min(Number(options.limit), 500) : 200;
+  const whereClauses: string[] = [];
+  const queryParams: string[] = [];
+
+  if (options.action) {
+    whereClauses.push("action = ?");
+    queryParams.push(options.action);
+  }
+
+  if (options.fromDate) {
+    whereClauses.push("created_at >= ?");
+    queryParams.push(`${options.fromDate} 00:00:00`);
+  }
+
+  if (options.toDate) {
+    whereClauses.push("created_at <= ?");
+    queryParams.push(`${options.toDate} 23:59:59`);
+  }
+
+  const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(" AND ")}` : "";
 
   return db.query<EventAuditLog>(
     `SELECT
@@ -85,7 +111,9 @@ export const listEventAuditLogs = async (limit = 200): Promise<EventAuditLog[]> 
         details,
         DATE_FORMAT(created_at, '%Y-%m-%d %H:%i:%s') AS created_at
       FROM event_audit_logs
+      ${whereSql}
       ORDER BY id DESC
       LIMIT ${safeLimit}`,
+    queryParams,
   );
 };

@@ -5,6 +5,9 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { logsApi } from "@/integrations/api";
 
@@ -26,10 +29,15 @@ const actionLabelMap: Record<string, string> = {
   evento_criado_pendente: "Evento criado (pendente)",
   evento_criado_publicado_direto: "Evento criado e publicado",
   evento_atualizado: "Evento atualizado",
-  evento_excluido: "Evento excluído",
+  evento_excluido: "Evento excluido",
   evento_aprovado: "Evento aprovado",
   evento_rejeitado: "Evento rejeitado",
 };
+
+const actionOptions = Object.entries(actionLabelMap).map(([value, label]) => ({
+  value,
+  label,
+}));
 
 const MYSQL_DATETIME_PATTERN =
   /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/;
@@ -62,7 +70,7 @@ const formatLogDateTime = (rawValue: string): string => {
   const mysqlMatch = String(rawValue || "").trim().match(MYSQL_DATETIME_PATTERN);
   if (mysqlMatch) {
     const [, year, month, day, hour, minute, second] = mysqlMatch;
-    return `${day}/${month}/${year} às ${hour}:${minute}:${second}`;
+    return `${day}/${month}/${year} as ${hour}:${minute}:${second}`;
   }
 
   const parsed = parseLogDate(rawValue);
@@ -80,7 +88,7 @@ const formatLogDateTime = (rawValue: string): string => {
     hour12: false,
   }).format(parsed);
 
-  return formatted.replace(",", " às");
+  return formatted.replace(",", " as");
 };
 
 const getDateKey = (rawValue: string): string | null => {
@@ -122,6 +130,9 @@ const AdminLogs = () => {
   const [logs, setLogs] = useState<EventAuditLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [sessionUser, setSessionUser] = useState<{ id: number; role: UserRole } | null>(null);
+  const [actionFilter, setActionFilter] = useState("all");
+  const [fromDateFilter, setFromDateFilter] = useState("");
+  const [toDateFilter, setToDateFilter] = useState("");
 
   const canAccess = sessionUser?.role === "admin";
 
@@ -138,8 +149,8 @@ const AdminLogs = () => {
       if (parsed.role !== "admin") {
         toast({
           variant: "destructive",
-          title: "Sem permissão",
-          description: "A aba de logs é exclusiva para administradores.",
+          title: "Sem permissao",
+          description: "A aba de logs e exclusiva para administradores.",
         });
         navigate("/dashboard");
       }
@@ -153,9 +164,24 @@ const AdminLogs = () => {
       return;
     }
 
+    if (fromDateFilter && toDateFilter && fromDateFilter > toDateFilter) {
+      setLoading(false);
+      toast({
+        variant: "destructive",
+        title: "Periodo invalido",
+        description: "A data inicial nao pode ser maior que a data final.",
+      });
+      return;
+    }
+
     setLoading(true);
     try {
-      const response = await logsApi.getEventLogs(300);
+      const response = await logsApi.getEventLogs({
+        limit: 300,
+        action: actionFilter !== "all" ? actionFilter : undefined,
+        fromDate: fromDateFilter || undefined,
+        toDate: toDateFilter || undefined,
+      });
       setLogs(response.data.logs || []);
     } catch (error: unknown) {
       const apiError = error as { response?: { data?: { error?: string } }; message?: string };
@@ -167,7 +193,7 @@ const AdminLogs = () => {
     } finally {
       setLoading(false);
     }
-  }, [canAccess, toast]);
+  }, [actionFilter, canAccess, fromDateFilter, toDateFilter, toast]);
 
   useEffect(() => {
     fetchLogs();
@@ -184,6 +210,12 @@ const AdminLogs = () => {
       }).length,
     };
   }, [logs]);
+
+  const clearFilters = () => {
+    setActionFilter("all");
+    setFromDateFilter("");
+    setToDateFilter("");
+  };
 
   if (!canAccess) {
     return null;
@@ -209,27 +241,74 @@ const AdminLogs = () => {
 
         <Card className="border-white/60 bg-white/85">
           <CardHeader>
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <CardTitle className="text-2xl">Logs de auditoria de eventos</CardTitle>
                 <CardDescription>
-                  Histórico de criação, alteração, aprovação, rejeição e exclusão de eventos.
+                  Historico de criacao, alteracao, aprovacao, rejeicao e exclusao de eventos.
                 </CardDescription>
               </div>
               <Button variant="outline" onClick={fetchLogs} disabled={loading}>
-                <RefreshCw className="h-4 w-4 mr-2" />
+                <RefreshCw className="mr-2 h-4 w-4" />
                 Atualizar
               </Button>
             </div>
           </CardHeader>
 
-          <CardContent>
+          <CardContent className="space-y-4">
+            <div className="rounded-xl border border-slate-200 bg-white p-3">
+              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_180px_auto] md:items-end">
+                <div className="space-y-1">
+                  <Label>Tipo de log</Label>
+                  <Select value={actionFilter} onValueChange={setActionFilter}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Todos os tipos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos os tipos</SelectItem>
+                      {actionOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="logs_from_date">Data inicial</Label>
+                  <Input
+                    id="logs_from_date"
+                    type="date"
+                    value={fromDateFilter}
+                    onChange={(event) => setFromDateFilter(event.target.value)}
+                    max={toDateFilter || undefined}
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="logs_to_date">Data final</Label>
+                  <Input
+                    id="logs_to_date"
+                    type="date"
+                    value={toDateFilter}
+                    onChange={(event) => setToDateFilter(event.target.value)}
+                    min={fromDateFilter || undefined}
+                  />
+                </div>
+
+                <Button variant="ghost" onClick={clearFilters} disabled={loading}>
+                  Limpar filtros
+                </Button>
+              </div>
+            </div>
+
             {loading && <div className="py-8 text-center text-muted-foreground">Carregando logs...</div>}
 
             {!loading && logs.length === 0 && (
               <div className="py-12 text-center text-muted-foreground">
-                <ScrollText className="h-14 w-14 mx-auto mb-3" />
-                Nenhum log encontrado.
+                <ScrollText className="mx-auto mb-3 h-14 w-14" />
+                Nenhum log encontrado para os filtros selecionados.
               </div>
             )}
 
@@ -238,17 +317,15 @@ const AdminLogs = () => {
                 {logs.map((log) => (
                   <article key={log.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                      <div className="space-y-1 min-w-0">
+                      <div className="min-w-0 space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <Badge className={getActionBadgeClass(log.action)}>
-                            {actionLabelMap[log.action] || log.action}
-                          </Badge>
+                          <Badge className={getActionBadgeClass(log.action)}>{actionLabelMap[log.action] || log.action}</Badge>
                           <span className="text-xs text-muted-foreground">#{log.id}</span>
                         </div>
 
                         <p className="text-sm text-slate-700">
                           <strong className="text-slate-900">Evento:</strong>{" "}
-                          {log.event_title || "(sem título)"}{" "}
+                          {log.event_title || "(sem titulo)"}{" "}
                           {log.event_id ? <span className="text-xs text-muted-foreground">(ID {log.event_id})</span> : null}
                         </p>
 
@@ -265,9 +342,7 @@ const AdminLogs = () => {
                         )}
                       </div>
 
-                      <div className="text-xs text-muted-foreground whitespace-nowrap">
-                        {formatLogDateTime(log.created_at)}
-                      </div>
+                      <div className="whitespace-nowrap text-xs text-muted-foreground">{formatLogDateTime(log.created_at)}</div>
                     </div>
                   </article>
                 ))}
@@ -279,10 +354,10 @@ const AdminLogs = () => {
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
           <p className="flex items-center gap-2 font-medium">
             <ShieldAlert className="h-4 w-4" />
-            Transparência operacional
+            Transparencia operacional
           </p>
           <p className="mt-1">
-            Cada ação de evento registra automaticamente ator, horário e contexto para rastreabilidade administrativa.
+            Cada acao de evento registra automaticamente ator, horario e contexto para rastreabilidade administrativa.
           </p>
         </div>
       </div>

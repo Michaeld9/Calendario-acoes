@@ -183,6 +183,13 @@ const getNowForMysql = (): string => {
   return new Date().toISOString().slice(0, 19).replace("T", " ");
 };
 
+const formatDateOnly = (value: Date): string => {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 const normalizeInvolvedEmails = (value: unknown): string | null => {
   if (value === undefined || value === null) {
     return null;
@@ -256,12 +263,12 @@ const parseBoolean = (value: unknown): boolean | null => {
 
 const getDefaultMirrorRange = () => {
   const now = new Date();
-  const from = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const to = new Date(now.getFullYear(), now.getMonth() + 7, 0);
+  const from = new Date(now.getFullYear(), 0, 1);
+  const to = new Date(now.getFullYear(), 11, 31);
 
   return {
-    fromDate: from.toISOString().slice(0, 10),
-    toDate: to.toISOString().slice(0, 10),
+    fromDate: formatDateOnly(from),
+    toDate: formatDateOnly(to),
   };
 };
 
@@ -669,7 +676,31 @@ async function handleLogs(req: Request, action: string): Promise<Response> {
   if (req.method === "GET" && action === "events") {
     const rawLimit = Number(req.query?.limit || 200);
     const limit = Number.isInteger(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 500) : 200;
-    const logs = await listEventAuditLogs(limit);
+    const rawAction = String(req.query?.action || "").trim();
+    const rawFromDate = String(req.query?.fromDate || "").trim();
+    const rawToDate = String(req.query?.toDate || "").trim();
+
+    const fromDate = rawFromDate ? normalizeDateString(rawFromDate) : null;
+    const toDate = rawToDate ? normalizeDateString(rawToDate) : null;
+
+    if (rawFromDate && !fromDate) {
+      return { status: 400, body: { error: "fromDate invalido. Use o formato YYYY-MM-DD." } };
+    }
+
+    if (rawToDate && !toDate) {
+      return { status: 400, body: { error: "toDate invalido. Use o formato YYYY-MM-DD." } };
+    }
+
+    if (!isValidDateRange(fromDate || undefined, toDate || undefined)) {
+      return { status: 400, body: { error: "Periodo invalido: fromDate deve ser menor ou igual a toDate." } };
+    }
+
+    const logs = await listEventAuditLogs({
+      limit,
+      action: rawAction || null,
+      fromDate,
+      toDate,
+    });
     return { status: 200, body: { logs } };
   }
 

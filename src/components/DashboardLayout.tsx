@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Calendar, CalendarClock, CheckSquare, LogOut, ScrollText, Shield, User, Users2 } from "lucide-react";
+import { BarChart3, Calendar, CalendarClock, CheckSquare, LogOut, ScrollText, Shield, User, Users2 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,7 +17,8 @@ import { cn } from "@/lib/utils";
 
 interface DashboardLayoutProps {
   children: ReactNode;
-  activeTab: "events" | "approvals" | "mirror" | "admin" | "logs";
+  activeTab: "events" | "analytics" | "approvals" | "mirror" | "admin" | "logs";
+  hideSidebar?: boolean;
 }
 
 interface StoredUser {
@@ -26,7 +27,7 @@ interface StoredUser {
   role: "admin" | "supervisor" | "coordenador";
 }
 
-const DashboardLayout = ({ children, activeTab }: DashboardLayoutProps) => {
+const DashboardLayout = ({ children, activeTab, hideSidebar = false }: DashboardLayoutProps) => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -74,6 +75,14 @@ const DashboardLayout = ({ children, activeTab }: DashboardLayoutProps) => {
         description: "Solicitações e gestão",
         onClick: () => navigate("/dashboard"),
         visible: true,
+      },
+      {
+        key: "analytics" as const,
+        icon: BarChart3,
+        label: "Dashboard",
+        description: "Gráficos e indicadores",
+        onClick: () => navigate("/dashboard/analytics"),
+        visible: user?.role === "admin" || user?.role === "supervisor",
       },
       {
         key: "approvals" as const,
@@ -181,42 +190,46 @@ const DashboardLayout = ({ children, activeTab }: DashboardLayoutProps) => {
       </header>
 
       <div className="mx-auto max-w-7xl px-4 py-5">
-        <div className={cn("flex gap-4", isMobile ? "flex-col" : "items-start")}>
-          <aside className={cn("flex-shrink-0", isMobile ? "w-full" : "w-[280px]")}>
-            <nav
-              className={cn(
-                "rounded-2xl border border-white/70 bg-white/85 shadow-md backdrop-blur",
-                isMobile ? "flex gap-2 overflow-x-auto p-2" : "space-y-2 p-3 sticky top-24",
-              )}
-            >
-              {navItems
-                .filter((item) => item.visible)
-                .map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <button
-                      key={item.key}
-                      onClick={item.onClick}
-                      className={cn(
-                        "w-full inline-flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-left transition-all",
-                        activeTab === item.key
-                          ? "bg-slate-900 text-white shadow"
-                          : "text-slate-700 hover:bg-slate-100",
-                      )}
-                    >
-                      <Icon className="h-4 w-4 shrink-0" />
-                      <span className="min-w-0">
-                        <span className="block font-medium leading-tight">{item.label}</span>
-                        {!isMobile && <span className="block text-[11px] opacity-80">{item.description}</span>}
-                      </span>
-                    </button>
-                  );
-                })}
-            </nav>
-          </aside>
+        {hideSidebar ? (
+          <main className="min-w-0">{children}</main>
+        ) : (
+          <div className={cn("flex gap-4", isMobile ? "flex-col" : "items-start")}>
+            <aside className={cn("flex-shrink-0", isMobile ? "w-full" : "w-[280px]")}>
+              <nav
+                className={cn(
+                  "rounded-2xl border border-white/70 bg-white/85 shadow-md backdrop-blur",
+                  isMobile ? "flex gap-2 overflow-x-auto p-2" : "space-y-2 p-3 sticky top-24",
+                )}
+              >
+                {navItems
+                  .filter((item) => item.visible)
+                  .map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        key={item.key}
+                        onClick={item.onClick}
+                        className={cn(
+                          "w-full inline-flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-left transition-all",
+                          activeTab === item.key
+                            ? "bg-slate-900 text-white shadow"
+                            : "text-slate-700 hover:bg-slate-100",
+                        )}
+                      >
+                        <Icon className="h-4 w-4 shrink-0" />
+                        <span className="min-w-0">
+                          <span className="block font-medium leading-tight">{item.label}</span>
+                          {!isMobile && <span className="block text-[11px] opacity-80">{item.description}</span>}
+                        </span>
+                      </button>
+                    );
+                  })}
+              </nav>
+            </aside>
 
-          <main className="flex-1 min-w-0">{children}</main>
-        </div>
+            <main className="flex-1 min-w-0">{children}</main>
+          </div>
+        )}
       </div>
     </div>
   );

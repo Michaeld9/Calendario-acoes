@@ -4,10 +4,17 @@ import { authApi } from "@/integrations/api";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
+  allowedRoles?: Array<"admin" | "supervisor" | "coordenador">;
+  unauthorizedRedirect?: string;
 }
 
-export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
+interface StoredUser {
+  role?: "admin" | "supervisor" | "coordenador";
+}
+
+export const ProtectedRoute = ({ children, allowedRoles, unauthorizedRedirect = "/dashboard" }: ProtectedRouteProps) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [hasPermission, setHasPermission] = useState(true);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -19,6 +26,21 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
 
       try {
         await authApi.verify();
+        if (allowedRoles?.length) {
+          const rawUser = localStorage.getItem("user");
+          if (!rawUser) {
+            setHasPermission(false);
+          } else {
+            try {
+              const parsed = JSON.parse(rawUser) as StoredUser;
+              setHasPermission(Boolean(parsed.role && allowedRoles.includes(parsed.role)));
+            } catch {
+              setHasPermission(false);
+            }
+          }
+        } else {
+          setHasPermission(true);
+        }
         setIsAuthenticated(true);
       } catch {
         localStorage.removeItem("auth_token");
@@ -28,7 +50,7 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
     };
 
     checkAuth();
-  }, []);
+  }, [allowedRoles]);
 
   if (isAuthenticated === null) {
     return (
@@ -41,5 +63,13 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
     );
   }
 
-  return isAuthenticated ? <>{children}</> : <Navigate to="/auth" replace />;
+  if (!isAuthenticated) {
+    return <Navigate to="/auth" replace />;
+  }
+
+  if (!hasPermission) {
+    return <Navigate to={unauthorizedRedirect} replace />;
+  }
+
+  return <>{children}</>;
 };

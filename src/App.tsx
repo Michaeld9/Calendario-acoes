@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
+import AnalyticsDashboard from "./pages/AnalyticsDashboard";
 import Approvals from "./pages/Approvals";
 import CalendarView from "./pages/CalendarView";
 import AdminUsers from "./pages/AdminUsers";
@@ -28,6 +29,14 @@ const App = () => (
             element={
               <ProtectedRoute>
                 <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dashboard/analytics"
+            element={
+              <ProtectedRoute allowedRoles={["admin", "supervisor"]}>
+                <AnalyticsDashboard />
               </ProtectedRoute>
             }
           />
