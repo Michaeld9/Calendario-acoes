@@ -283,7 +283,7 @@ const Auth = () => {
                   type="email"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
-                  placeholder="admin@app.local"
+                  placeholder="Digite seu E-mail"
                   autoComplete="email"
                   required
                 />

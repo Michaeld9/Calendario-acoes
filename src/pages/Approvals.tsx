@@ -26,6 +26,26 @@ interface Event {
   creator?: { full_name: string | null; email: string };
 }
 
+const normalizeDateOnly = (value: string): string => {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return match ? match[0] : raw.slice(0, 10);
+};
+
+const formatDateOnly = (value: string): string => {
+  const dateOnly = normalizeDateOnly(value);
+  const [yearText, monthText, dayText] = dateOnly.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+
+  if (!year || !month || !day) {
+    return dateOnly || "-";
+  }
+
+  return format(new Date(year, month - 1, day), "dd/MM/yyyy", { locale: ptBR });
+};
+
 const Approvals = () => {
   const { toast } = useToast();
   const [events, setEvents] = useState<Event[]>([]);
@@ -159,11 +179,16 @@ const Approvals = () => {
                         </div>
                         <div>
                           <strong className="text-foreground">Período</strong>
-                          <p className="text-muted-foreground">
-                            {format(new Date(event.start_date), "dd/MM/yyyy", { locale: ptBR })}
-                            {event.start_date !== event.end_date &&
-                              ` até ${format(new Date(event.end_date), "dd/MM/yyyy", { locale: ptBR })}`}
-                          </p>
+                          {(() => {
+                            const startDate = normalizeDateOnly(event.start_date);
+                            const endDate = normalizeDateOnly(event.end_date);
+                            return (
+                              <p className="text-muted-foreground">
+                                {formatDateOnly(startDate)}
+                                {startDate !== endDate && ` até ${formatDateOnly(endDate)}`}
+                              </p>
+                            );
+                          })()}
                         </div>
                         {!event.all_day && event.start_time && (
                           <div className="sm:col-span-2">

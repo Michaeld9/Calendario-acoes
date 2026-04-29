@@ -21,13 +21,37 @@ export interface Event {
   creator?: { full_name: string | null; email: string };
 }
 
-interface EventRow extends Event {
+interface EventRow extends Omit<Event, "start_date" | "end_date" | "all_day" | "creator"> {
+  start_date: string | Date;
+  end_date: string | Date;
+  all_day: number | boolean;
   creator_name: string | null;
   creator_email: string;
 }
 
+const toDateOnlyString = (value: string | Date): string => {
+  if (value instanceof Date) {
+    return value.toISOString().slice(0, 10);
+  }
+
+  const raw = String(value || "").trim();
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (match) {
+    return match[1];
+  }
+
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  return raw;
+};
+
 const formatEvent = (row: EventRow): Event => ({
   ...row,
+  start_date: toDateOnlyString(row.start_date),
+  end_date: toDateOnlyString(row.end_date),
   all_day: Boolean(row.all_day),
   creator: {
     full_name: row.creator_name,
