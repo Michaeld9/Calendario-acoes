@@ -4,17 +4,24 @@ import { authApi } from "@/integrations/api";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
-  allowedRoles?: Array<"admin" | "supervisor" | "coordenador">;
+  allowedRoles?: Array<"admin" | "supervisor" | "coordenador" | "aguardando">;
   unauthorizedRedirect?: string;
+  allowPendingUser?: boolean;
 }
 
 interface StoredUser {
-  role?: "admin" | "supervisor" | "coordenador";
+  role?: "admin" | "supervisor" | "coordenador" | "aguardando";
 }
 
-export const ProtectedRoute = ({ children, allowedRoles, unauthorizedRedirect = "/dashboard" }: ProtectedRouteProps) => {
+export const ProtectedRoute = ({
+  children,
+  allowedRoles,
+  unauthorizedRedirect = "/dashboard",
+  allowPendingUser = false,
+}: ProtectedRouteProps) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [hasPermission, setHasPermission] = useState(true);
+  const [userRole, setUserRole] = useState<StoredUser["role"] | null>(null);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -25,19 +32,29 @@ export const ProtectedRoute = ({ children, allowedRoles, unauthorizedRedirect = 
       }
 
       try {
-        await authApi.verify();
-        if (allowedRoles?.length) {
-          const rawUser = localStorage.getItem("user");
-          if (!rawUser) {
-            setHasPermission(false);
-          } else {
-            try {
-              const parsed = JSON.parse(rawUser) as StoredUser;
-              setHasPermission(Boolean(parsed.role && allowedRoles.includes(parsed.role)));
-            } catch {
-              setHasPermission(false);
-            }
+        const response = await authApi.verify();
+        const verifiedUser = response.data?.user as StoredUser | undefined;
+
+        if (verifiedUser) {
+          localStorage.setItem("user", JSON.stringify(verifiedUser));
+        }
+
+        const rawUser = localStorage.getItem("user");
+        let parsedRole: StoredUser["role"] | null = null;
+        if (rawUser) {
+          try {
+            const parsed = JSON.parse(rawUser) as StoredUser;
+            parsedRole = parsed.role || null;
+          } catch {
+            parsedRole = null;
           }
+        }
+
+        setUserRole(verifiedUser?.role || parsedRole || null);
+
+        if (allowedRoles?.length) {
+          const effectiveRole = verifiedUser?.role || parsedRole;
+          setHasPermission(Boolean(effectiveRole && allowedRoles.includes(effectiveRole)));
         } else {
           setHasPermission(true);
         }
@@ -50,7 +67,7 @@ export const ProtectedRoute = ({ children, allowedRoles, unauthorizedRedirect = 
     };
 
     checkAuth();
-  }, [allowedRoles]);
+  }, [allowPendingUser, allowedRoles]);
 
   if (isAuthenticated === null) {
     return (
@@ -67,9 +84,14 @@ export const ProtectedRoute = ({ children, allowedRoles, unauthorizedRedirect = 
     return <Navigate to="/auth" replace />;
   }
 
+  if (userRole === "aguardando" && !allowPendingUser) {
+    return <Navigate to="/dashboard/aguardando" replace />;
+  }
+
   if (!hasPermission) {
     return <Navigate to={unauthorizedRedirect} replace />;
   }
 
   return <>{children}</>;
 };
+

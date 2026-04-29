@@ -5,6 +5,7 @@ import db from "./db";
 import { ensureEventsSchema } from "./events";
 import { ensureEventAuditLogsSchema } from "./logs";
 import { handleRequest } from "./http";
+import { ensureUsersSchema } from "./users";
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -197,6 +198,7 @@ app.use("/api", async (req, res) => {
 const startServer = async () => {
   try {
     await db.ping();
+    await ensureUsersSchema();
     await ensureEventsSchema();
     await ensureEventAuditLogsSchema();
     await ensureAdminUser();

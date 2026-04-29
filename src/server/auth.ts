@@ -62,7 +62,7 @@ export interface AuthUser {
   id: number;
   email: string;
   full_name: string | null;
-  role: "admin" | "supervisor" | "coordenador";
+  role: "admin" | "supervisor" | "coordenador" | "aguardando";
   auth_type: "local" | "google";
 }
 
@@ -204,7 +204,7 @@ export const loginGoogle = async (
       }
     } else {
       const insertResult = await db.execute(
-        "INSERT INTO users (google_id, email, full_name, avatar_url, auth_type, role, active) VALUES (?, ?, ?, ?, 'google', 'coordenador', 1)",
+        "INSERT INTO users (google_id, email, full_name, avatar_url, auth_type, role, active) VALUES (?, ?, ?, ?, 'google', 'aguardando', 1)",
         [googleId, email, fullName || null, avatarUrl || null],
       );
 

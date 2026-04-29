@@ -237,7 +237,7 @@ const parseAndValidateInvolvedEmails = (
 
 const parseRole = (value: unknown): UserRole | null => {
   const role = String(value || "").trim();
-  if (role === "admin" || role === "supervisor" || role === "coordenador") {
+  if (role === "admin" || role === "supervisor" || role === "coordenador" || role === "aguardando") {
     return role;
   }
 

@@ -16,7 +16,7 @@ CREATE TABLE users (
   avatar_url TEXT NULL,
   auth_type ENUM("local", "google") NOT NULL DEFAULT "google",
   google_id VARCHAR(255) NULL UNIQUE,
-  role ENUM("admin", "supervisor", "coordenador") NOT NULL DEFAULT "coordenador",
+  role ENUM("admin", "supervisor", "coordenador", "aguardando") NOT NULL DEFAULT "coordenador",
   active TINYINT(1) NOT NULL DEFAULT 1,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP

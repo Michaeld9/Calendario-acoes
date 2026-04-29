@@ -26,6 +26,22 @@ const mapManagedUser = (row: ManagedUserRow): ManagedUser => ({
   active: Boolean(row.active),
 });
 
+export const ensureUsersSchema = async (): Promise<void> => {
+  const roleColumn = await db.query<{ Type: string }>("SHOW COLUMNS FROM users LIKE 'role'");
+  if (!roleColumn.length) {
+    return;
+  }
+
+  const currentType = String(roleColumn[0].Type || "").toLowerCase();
+  if (currentType.includes("'aguardando'")) {
+    return;
+  }
+
+  await db.execute(
+    "ALTER TABLE users MODIFY COLUMN role ENUM('admin', 'supervisor', 'coordenador', 'aguardando') NOT NULL DEFAULT 'coordenador'",
+  );
+};
+
 export const listUsers = async (): Promise<ManagedUser[]> => {
   const rows = await db.query<ManagedUserRow>(
     `SELECT id, email, full_name, avatar_url, google_id, auth_type, role, active, created_at, updated_at

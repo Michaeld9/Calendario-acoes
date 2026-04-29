@@ -35,8 +35,12 @@ const Auth = () => {
       }
 
       try {
-        await authApi.verify();
-        navigate("/dashboard");
+        const response = await authApi.verify();
+        const verifiedUser = response.data?.user as { role?: string } | undefined;
+        if (verifiedUser) {
+          localStorage.setItem("user", JSON.stringify(response.data.user));
+        }
+        navigate(verifiedUser?.role === "aguardando" ? "/dashboard/aguardando" : "/dashboard");
       } catch {
         localStorage.removeItem("auth_token");
         localStorage.removeItem("user");
@@ -141,7 +145,7 @@ const Auth = () => {
                 description: `Acesso concedido para ${user.full_name || user.email}.`,
               });
 
-              navigate("/dashboard");
+              navigate(user.role === "aguardando" ? "/dashboard/aguardando" : "/dashboard");
             } catch (error: unknown) {
               const apiError = error as { response?: { data?: { error?: string } }; message?: string };
               toast({
@@ -200,7 +204,7 @@ const Auth = () => {
         description: `Bem-vindo(a), ${user.full_name || user.email}.`,
       });
 
-      navigate("/dashboard");
+      navigate(user.role === "aguardando" ? "/dashboard/aguardando" : "/dashboard");
     } catch (error: unknown) {
       const apiError = error as { response?: { data?: { error?: string } }; message?: string };
       toast({

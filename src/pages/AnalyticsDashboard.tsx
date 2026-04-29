@@ -20,6 +20,11 @@ interface Event {
   start_date: string;
   event_type: string;
   status: EventStatus;
+  created_by: number;
+  creator?: {
+    full_name: string | null;
+    email: string;
+  };
 }
 
 interface MonthCount {
@@ -31,6 +36,14 @@ interface MonthCount {
 interface TypeCount {
   label: string;
   count: number;
+}
+
+interface UserRankingCount {
+  key: string;
+  label: string;
+  email: string | null;
+  sent: number;
+  approved: number;
 }
 
 const getCurrentMonthKey = (): string => {
@@ -258,6 +271,50 @@ const AnalyticsDashboard = () => {
       .sort((a, b) => b.count - a.count);
   }, [eventsForTypeChart]);
 
+  const eventsForUserRanking = useMemo(() => {
+    const prefix = `${selectedYear}-`;
+    return events.filter((event) => String(event.start_date || "").startsWith(prefix));
+  }, [events, selectedYear]);
+
+  const topUsersByEvents = useMemo<UserRankingCount[]>(() => {
+    const counts = new Map<string, UserRankingCount>();
+
+    for (const event of eventsForUserRanking) {
+      const creatorEmail = String(event.creator?.email || "").trim().toLowerCase();
+      const fallbackKey = Number.isInteger(event.created_by) ? `id:${event.created_by}` : "id:0";
+      const key = creatorEmail || fallbackKey;
+      const creatorName = String(event.creator?.full_name || "").trim();
+      const label = creatorName || event.creator?.email || `Usuario #${event.created_by || 0}`;
+
+      const current = counts.get(key) || {
+        key,
+        label,
+        email: creatorEmail || null,
+        sent: 0,
+        approved: 0,
+      };
+
+      current.sent += 1;
+      if (event.status === "approved") {
+        current.approved += 1;
+      }
+
+      counts.set(key, current);
+    }
+
+    return Array.from(counts.values())
+      .sort((a, b) => {
+        if (b.sent !== a.sent) {
+          return b.sent - a.sent;
+        }
+        if (b.approved !== a.approved) {
+          return b.approved - a.approved;
+        }
+        return a.label.localeCompare(b.label, "pt-BR");
+      })
+      .slice(0, 5);
+  }, [eventsForUserRanking]);
+
   const monthChartMax = useMemo(() => Math.max(0, ...eventsByMonth.map((item) => item.count)), [eventsByMonth]);
   const monthChartAxis = useMemo(() => getYAxisConfig(monthChartMax, 4, 4), [monthChartMax]);
   const monthLabelClassName = useMemo(() => {
@@ -283,6 +340,7 @@ const AnalyticsDashboard = () => {
     return 38;
   }, [eventsByMonth.length, isMobile]);
   const typeChartMax = useMemo(() => Math.max(1, ...eventsByType.map((item) => item.count)), [eventsByType]);
+  const topUsersSentMax = useMemo(() => Math.max(1, ...topUsersByEvents.map((item) => item.sent)), [topUsersByEvents]);
   const selectedFilterLabel = useMemo(() => {
     if (typeFilterMode === "total") {
       return "Total geral";
@@ -532,6 +590,59 @@ const AnalyticsDashboard = () => {
                       <span className="text-right text-xs font-semibold text-slate-700">{item.count}</span>
                     </div>
                   ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-white/60 bg-white/85">
+            <CardHeader>
+              <div className="flex flex-col gap-2">
+                <CardTitle className="text-lg">Top 5 usuarios por eventos enviados/aprovados</CardTitle>
+                <CardDescription>
+                  Base atual: Ano {selectedYear} ({eventsForUserRanking.length} eventos).
+                </CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <div className="py-8 text-center text-sm text-muted-foreground">Carregando dados...</div>
+              ) : topUsersByEvents.length === 0 ? (
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  <CalendarDays className="mx-auto mb-2 h-8 w-8" />
+                  Nenhum usuario com eventos no periodo selecionado.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {topUsersByEvents.map((item) => {
+                    const sentWidth = item.sent === 0 ? 0 : Math.max(4, (item.sent / topUsersSentMax) * 100);
+                    const approvalRate = item.sent === 0 ? 0 : Math.round((item.approved / item.sent) * 100);
+
+                    return (
+                      <div key={item.key} className="rounded-xl border border-slate-200 bg-white p-3">
+                        <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-slate-900">{item.label}</p>
+                            {item.email && <p className="truncate text-xs text-muted-foreground">{item.email}</p>}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant="outline">Enviados: {item.sent}</Badge>
+                            <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
+                              Aprovados: {item.approved}
+                            </Badge>
+                          </div>
+                        </div>
+
+                        <div className="h-3 overflow-hidden rounded-full bg-slate-100">
+                          <div
+                            className="h-full rounded-full bg-sky-500 transition-all"
+                            style={{ width: `${sentWidth}%` }}
+                          />
+                        </div>
+                        <p className="mt-1 text-[11px] text-slate-500">Taxa de aprovacao: {approvalRate}%</p>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </CardContent>

@@ -24,7 +24,7 @@ interface DashboardLayoutProps {
 interface StoredUser {
   email: string;
   full_name: string | null;
-  role: "admin" | "supervisor" | "coordenador";
+  role: "admin" | "supervisor" | "coordenador" | "aguardando";
 }
 
 const DashboardLayout = ({ children, activeTab, hideSidebar = false }: DashboardLayoutProps) => {

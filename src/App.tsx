@@ -11,6 +11,7 @@ import Approvals from "./pages/Approvals";
 import CalendarView from "./pages/CalendarView";
 import AdminUsers from "./pages/AdminUsers";
 import AdminLogs from "./pages/AdminLogs";
+import PendingAccess from "./pages/PendingAccess";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -29,6 +30,14 @@ const App = () => (
             element={
               <ProtectedRoute>
                 <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dashboard/aguardando"
+            element={
+              <ProtectedRoute allowedRoles={["aguardando"]} allowPendingUser unauthorizedRedirect="/dashboard">
+                <PendingAccess />
               </ProtectedRoute>
             }
           />

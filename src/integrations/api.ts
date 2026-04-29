@@ -69,10 +69,10 @@ export const usersApi = {
   listUsers: () =>
     api.get('/users'),
 
-  createLocalUser: (payload: { fullName: string; email: string; password: string; role: 'admin' | 'supervisor' | 'coordenador' }) =>
+  createLocalUser: (payload: { fullName: string; email: string; password: string; role: 'admin' | 'supervisor' | 'coordenador' | 'aguardando' }) =>
     api.post('/users/local', payload),
 
-  updateUserRole: (userId: number, role: 'admin' | 'supervisor' | 'coordenador') =>
+  updateUserRole: (userId: number, role: 'admin' | 'supervisor' | 'coordenador' | 'aguardando') =>
     api.patch(`/users/${userId}/role`, { role }),
 
   updateUserActive: (userId: number, active: boolean) =>

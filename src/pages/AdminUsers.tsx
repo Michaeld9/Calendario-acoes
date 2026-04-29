@@ -13,7 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { settingsApi, usersApi } from "@/integrations/api";
 
-type UserRole = "admin" | "supervisor" | "coordenador";
+type UserRole = "admin" | "supervisor" | "coordenador" | "aguardando";
 
 interface ManagedUser {
   id: number;
@@ -30,6 +30,7 @@ const roleLabel: Record<UserRole, string> = {
   admin: "Administrador",
   supervisor: "Supervisor",
   coordenador: "Coordenação",
+  aguardando: "Aguardando liberação",
 };
 
 const AdminUsers = () => {
@@ -382,6 +383,7 @@ const AdminUsers = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="aguardando">Aguardando liberação</SelectItem>
                     <SelectItem value="coordenador">Coordenação</SelectItem>
                     <SelectItem value="supervisor">Supervisor</SelectItem>
                     <SelectItem value="admin">Administrador</SelectItem>
@@ -458,6 +460,7 @@ const AdminUsers = () => {
                               <SelectValue>{roleLabel[user.role]}</SelectValue>
                             </SelectTrigger>
                             <SelectContent>
+                              <SelectItem value="aguardando">Aguardando liberação</SelectItem>
                               <SelectItem value="coordenador">Coordenação</SelectItem>
                               <SelectItem value="supervisor">Supervisor</SelectItem>
                               <SelectItem value="admin">Administrador</SelectItem>

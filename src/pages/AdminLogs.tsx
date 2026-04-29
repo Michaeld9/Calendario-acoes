@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { logsApi } from "@/integrations/api";
 
-type UserRole = "admin" | "supervisor" | "coordenador";
+type UserRole = "admin" | "supervisor" | "coordenador" | "aguardando";
 
 interface EventAuditLog {
   id: number;
@@ -366,3 +366,4 @@ const AdminLogs = () => {
 };
 
 export default AdminLogs;
+

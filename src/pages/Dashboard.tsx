@@ -12,7 +12,7 @@ import { eventsApi } from "@/integrations/api";
 import { getEventTypeBadgeClass } from "@/lib/eventTypeColors";
 
 type EventStatus = "pending" | "approved" | "rejected";
-type UserRole = "admin" | "supervisor" | "coordenador";
+type UserRole = "admin" | "supervisor" | "coordenador" | "aguardando";
 
 interface Event {
   id: number;
@@ -336,3 +336,4 @@ const Dashboard = () => {
 };
 
 export default Dashboard;
+

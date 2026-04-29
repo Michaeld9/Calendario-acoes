@@ -26,7 +26,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { eventsApi } from "@/integrations/api";
 
-type UserRole = "admin" | "supervisor" | "coordenador";
+type UserRole = "admin" | "supervisor" | "coordenador" | "aguardando";
 
 interface MirroredEvent {
   google_event_id: string;
@@ -487,3 +487,4 @@ const CalendarView = () => {
 };
 
 export default CalendarView;
+
